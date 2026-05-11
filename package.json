@@ -1,6 +1,7 @@
 {
-  "name": "horizons-booking",
-  "version": "1.0.0",
+  "name": "atlas-admin-v2",
+  "version": "0.2.0",
+  "description": "Superficie administrativa interna de ATLAS, aislada de la web pública.",
   "private": true,
   "type": "module",
   "scripts": {
