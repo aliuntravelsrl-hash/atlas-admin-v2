@@ -7,163 +7,192 @@ export const HorizonsLayout = () => {
 
   const navigation = [
     {
-      name: 'Dashboard',
-      icon: '📊',
+      name: 'Dashboard V2.6',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+      href: '/dashboard26',
+      current: location.pathname === '/dashboard26'
+    },
+    {
+      name: 'War Room (V4.1)',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      ),
+      href: '/warroom',
+      badge: { text: 'NEW', color: 'bg-violet-600/25 border border-violet-500/30 text-violet-400' },
+      current: location.pathname === '/warroom'
+    },
+    {
+      name: 'Admin 4.1',
+      icon: (
+        <svg className="w-5 h-5 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+        </svg>
+      ),
+      href: '/admin41',
+      current: location.pathname === '/admin41'
+    },
+    {
+      name: 'Mission Control',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </svg>
+      ),
+      href: '/mission',
+      badge: { text: 'LIVE', color: 'bg-emerald-600/25 border border-emerald-500/30 text-emerald-400' },
+      current: location.pathname === '/mission'
+    },
+    {
+      name: 'Integrity Monitor',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      ),
+      href: '/integrity',
+      badge: { text: 'AUDIT', color: 'bg-blue-600/25 border border-blue-500/30 text-blue-400' },
+      current: location.pathname === '/integrity'
+    },
+    {
+      name: 'Atlas Admin 🗺️',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+      ),
       href: '/',
       current: location.pathname === '/'
     },
     {
-      name: 'Marketing',
-      icon: '📢',
-      children: [
-        { name: 'Ofertas', href: '/marketing/offers' },
-        { name: 'Nueva Oferta', href: '/marketing/offers/new' }
-      ]
+      name: 'Auditoría de Hoteles',
+      icon: '🔍',
+      href: '/integrity',
+      current: false
     },
     {
-      name: 'Sales',
-      icon: '💰',
-      children: [
-        { name: 'Ofertas', href: '/sales/offers' },
-        { name: 'Bloqueos', href: '/sales/bloqueos' },
-        { name: 'Confirmaciones', href: '/sales/confirmaciones' }
-      ]
+      name: 'Usuarios Admin',
+      icon: '👥',
+      href: '/settings',
+      current: false
     },
     {
-      name: 'Financiero',
-      icon: '💵',
-      children: [
-        { name: 'Dashboard', href: '/financial/dashboard' },
-        { name: 'Reportes', href: '/financial/reports' }
-      ]
-    },
-    {
-      name: 'Intelligence',
-      icon: '🧠',
-      children: [
-        { name: 'Hotel Scores', href: '/intelligence/scores' },
-        { name: 'Análisis Inversión', href: '/intelligence/investment' }
-      ]
-    },
-    {
-      name: 'Booking (Legacy)',
-      icon: '🏨',
-      href: '/booking',
-      current: location.pathname.startsWith('/booking')
-    },
-    {
-      name: 'Configuración',
+      name: 'Configurar Servicios',
       icon: '⚙️',
       href: '/settings',
-      current: location.pathname === '/settings'
+      current: false
+    },
+    {
+      name: 'Galería (FASE 1)',
+      icon: '🖼️',
+      href: '/marketing/offers',
+      current: false
     }
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b sticky top-0 z-30">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="text-gray-600 hover:text-gray-900 focus:outline-none"
-            >
-              {sidebarOpen ? '◀' : '▶'}
-            </button>
-            <h1 className="text-2xl font-bold text-blue-600">
-              Atlas Horizons
-            </h1>
+    <div className="min-h-screen bg-slate-950 flex flex-col font-sans">
+      {/* Header móvil / toggle */}
+      <div className="md:hidden bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between text-white">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-slate-950">
+            ✈️
           </div>
-          
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">
-              Aliun Travel SRL
-            </span>
-            <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
-              AH
-            </div>
-          </div>
+          <span className="font-black tracking-wider text-sm">ALIUNADMIN</span>
         </div>
-      </header>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="text-slate-400 hover:text-white focus:outline-none"
+        >
+          {sidebarOpen ? '◀' : '▶'}
+        </button>
+      </div>
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 flex-col md:flex-row">
+        
         {/* Sidebar */}
         {sidebarOpen && (
-          <aside className="w-64 bg-white border-r min-h-[calc(100vh-73px)] sticky top-[73px] self-start overflow-y-auto">
-            <nav className="p-4 space-y-2">
-              {navigation.map((item) => (
-                <NavItem key={item.name} item={item} />
-              ))}
-            </nav>
+          <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800/80 min-h-screen self-start overflow-y-auto flex flex-col justify-between">
+            <div className="p-4 space-y-6">
+              
+              {/* Logo / Brand */}
+              <div className="hidden md:flex items-center gap-3 px-2 py-4 border-b border-slate-800/60">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950">
+                  <svg className="w-5 h-5 transform -rotate-45" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L14 19v-5.5l7 2.5z" />
+                  </svg>
+                </div>
+                <span className="font-black tracking-wider text-white text-lg">ALIUNADMIN</span>
+              </div>
+
+              {/* User Profiling */}
+              <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-slate-950/50 border border-slate-850">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-extrabold text-sm shadow-md">
+                  A
+                </div>
+                <div>
+                  <div className="font-extrabold text-sm text-white">Admin User</div>
+                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Super Administrator</div>
+                </div>
+              </div>
+
+              {/* Navigation Items */}
+              <nav className="space-y-1.5 pt-4">
+                {navigation.map((item) => (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`flex items-center justify-between px-3.5 py-3 rounded-xl transition-all border font-semibold text-sm group ${
+                      item.current
+                        ? 'bg-blue-600/15 border-blue-500/40 text-white shadow-lg shadow-blue-500/5'
+                        : 'bg-transparent border-transparent hover:bg-slate-950 hover:border-slate-850 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className={`${item.current ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                        {item.icon}
+                      </span>
+                      <span>{item.name}</span>
+                    </span>
+                    {item.badge && (
+                      <span className={`px-2 py-0.5 text-[8px] font-black rounded-md ${item.badge.color}`}>
+                        {item.badge.text}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </nav>
+
+            </div>
+
+            {/* Cerrar Sesión Bottom Link */}
+            <div className="p-4 border-t border-slate-800/60">
+              <Link
+                to="/"
+                className="flex items-center gap-3 px-3.5 py-3 rounded-xl text-rose-500 hover:bg-rose-500/5 transition font-semibold text-sm"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span>Cerrar Sesión</span>
+              </Link>
+            </div>
           </aside>
         )}
 
-        {/* Main Content */}
-        <main className="flex-1 p-6">
+        {/* Main Content Area */}
+        <main className="flex-1 p-6 md:p-8 bg-slate-950 overflow-y-auto min-h-screen">
           <Outlet />
         </main>
+
       </div>
     </div>
-  );
-};
-
-// Sub-componente: Item de navegación
-const NavItem = ({ item }) => {
-  const location = useLocation();
-  // Expandir automáticamente si alguna ruta hija coincide
-  const hasActiveChild = item.children && item.children.some(child => location.pathname === child.href);
-  const [expanded, setExpanded] = useState(hasActiveChild);
-
-  if (item.children) {
-    return (
-      <div className="space-y-1">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between px-4 py-2 rounded text-gray-700 hover:bg-gray-100 focus:outline-none"
-        >
-          <span className="flex items-center gap-2">
-            <span>{item.icon}</span>
-            <span>{item.name}</span>
-          </span>
-          <span className="text-gray-400 text-xs">
-            {expanded ? '▼' : '▶'}
-          </span>
-        </button>
-        
-        {expanded && (
-          <div className="ml-6 space-y-1 pl-2 border-l border-gray-200">
-            {item.children.map((child) => (
-              <Link
-                key={child.href}
-                to={child.href}
-                className={`block px-4 py-2 rounded text-sm transition-colors ${
-                  location.pathname === child.href
-                    ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`}
-              >
-                {child.name}
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      to={item.href}
-      className={`flex items-center gap-2 px-4 py-2 rounded transition-colors ${
-        item.current
-          ? 'bg-blue-50 text-blue-600 font-medium'
-          : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-      }`}
-    >
-      <span>{item.icon}</span>
-      <span>{item.name}</span>
-    </Link>
   );
 };
 

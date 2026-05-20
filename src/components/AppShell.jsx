@@ -10,6 +10,13 @@ import DashboardHome from './marketing/DashboardHome'
 import MarketingOffersPanel from './marketing/MarketingOffersPanel'
 import CreateOfferForm from './marketing/CreateOfferForm'
 
+// Phase 2 components
+import DashboardV26 from './marketing/DashboardV26'
+import WarRoomV41 from './marketing/WarRoomV41'
+import IntegrityMonitor from './marketing/IntegrityMonitor'
+import AdminPanel41 from './marketing/AdminPanel41'
+import MissionControlLive from './marketing/MissionControlLive'
+
 export function AppShell() {
   return (
     <BrowserRouter>
@@ -20,6 +27,13 @@ export function AppShell() {
             {/* Dashboard Home en / */}
             <Route index element={<DashboardHome />} />
             
+            {/* Phase 2 Modules */}
+            <Route path="dashboard26" element={<DashboardV26 />} />
+            <Route path="warroom" element={<WarRoomV41 />} />
+            <Route path="integrity" element={<IntegrityMonitor />} />
+            <Route path="admin41" element={<AdminPanel41 />} />
+            <Route path="mission" element={<MissionControlLive />} />
+
             {/* Rutas de Marketing */}
             <Route path="marketing/offers" element={<MarketingOffersPanel />} />
             <Route path="marketing/offers/new" element={<CreateOfferForm />} />
