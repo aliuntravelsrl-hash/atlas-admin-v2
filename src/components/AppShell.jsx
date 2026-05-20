@@ -3,66 +3,90 @@ import { BookingProvider } from '../features/bookings/source-horizons/context/Bo
 import RoomSelection from '../features/bookings/source-horizons/pages/Booking/RoomSelection'
 import GuestDetails  from '../features/bookings/source-horizons/pages/Booking/GuestDetails'
 import ReviewBooking from '../features/bookings/source-horizons/pages/Booking/ReviewBooking'
-import { LayoutDashboard, Users, Calendar, Settings } from 'lucide-react'
+
+// Horizons components
+import HorizonsLayout from './marketing/HorizonsLayout'
+import DashboardHome from './marketing/DashboardHome'
+import MarketingOffersPanel from './marketing/MarketingOffersPanel'
+import CreateOfferForm from './marketing/CreateOfferForm'
 
 export function AppShell() {
   return (
-    <div className="app-shell min-h-screen bg-slate-900 text-slate-100 flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-800 border-r border-slate-700 p-6 flex flex-col">
-        <h1 className="text-xl font-black italic tracking-wider mb-8 text-blue-400">ATLAS ADMIN V2</h1>
-        <nav className="flex-1 space-y-2">
-          <a href="#" className="flex items-center gap-3 px-4 py-3 bg-blue-600/20 text-blue-400 rounded-xl transition-colors">
-            <LayoutDashboard size={20} />
-            <span className="font-semibold">Dashboard</span>
-          </a>
-          <a href="#" className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 rounded-xl transition-colors">
-            <Calendar size={20} />
-            <span className="font-semibold">Bookings (Legacy)</span>
-          </a>
-          <a href="#" className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 rounded-xl transition-colors">
-            <Users size={20} />
-            <span className="font-semibold">Users</span>
-          </a>
-          <a href="#" className="flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 rounded-xl transition-colors">
-            <Settings size={20} />
-            <span className="font-semibold">Settings</span>
-          </a>
-        </nav>
-      </aside>
+    <BrowserRouter>
+      <BookingProvider>
+        <Routes>
+          {/* Ruta base envuelta en HorizonsLayout maestro */}
+          <Route path="/" element={<HorizonsLayout />}>
+            {/* Dashboard Home en / */}
+            <Route index element={<DashboardHome />} />
+            
+            {/* Rutas de Marketing */}
+            <Route path="marketing/offers" element={<MarketingOffersPanel />} />
+            <Route path="marketing/offers/new" element={<CreateOfferForm />} />
+            
+            {/* Rutas placeholders para las otras secciones de Horizons */}
+            <Route path="sales/offers" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Sección de Ofertas de Ventas</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Esta sección permitirá registrar ventas directas.</p>
+              </div>
+            } />
+            <Route path="sales/bloqueos" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Sección de Bloqueos de Cupos</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Esta sección permitirá gestionar inventario bloqueado con hoteles.</p>
+              </div>
+            } />
+            <Route path="sales/confirmaciones" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Sección de Confirmaciones de Venta</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Permite auditar e ingresar el localizador final del hotel.</p>
+              </div>
+            } />
+            <Route path="financial/dashboard" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Dashboard de Análisis Financiero</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Mostrará reportes de conciliación bancaria y ganancias netas.</p>
+              </div>
+            } />
+            <Route path="financial/reports" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Reportes Financieros Exportables</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Permite descargar reportes fiscales en formato CSV/Excel.</p>
+              </div>
+            } />
+            <Route path="intelligence/scores" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Estadísticas de Atractividad de Hoteles (Scores)</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Utiliza IA para predecir qué hotel se venderá más en base a su precio.</p>
+              </div>
+            } />
+            <Route path="intelligence/investment" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Análisis de ROI de Campañas</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Evalúa la inversión publicitaria versus ingresos generados.</p>
+              </div>
+            } />
+            <Route path="settings" element={
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-800">Configuraciones del Sistema</h2>
+                <p className="text-gray-500 mt-2">Módulo en desarrollo. Ajustes de pasarelas de pago y roles de usuario.</p>
+              </div>
+            } />
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto bg-slate-50 text-slate-900">
-        <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">Booking Management (Horizons Source)</h2>
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-500">
-              C3
-            </div>
-          </div>
-        </header>
-
-        <div className="p-8">
-          <BrowserRouter>
-            <BookingProvider>
-              <Routes>
-                {/* Ruta principal del booking — slug del hotel */}
-                <Route path="/hotel/:hotelSlug/reservar"    element={<RoomSelection />} />
-                <Route path="/hotel/:hotelSlug/huespedes"   element={<GuestDetails />} />
-                <Route path="/hotel/:hotelSlug/confirmar"   element={<ReviewBooking />} />
-
-                {/* Dev shortcut — sin slug */}
-                <Route path="/booking"  element={<RoomSelection />} />
-                <Route path="/booking2" element={<GuestDetails />} />
-                <Route path="/booking3" element={<ReviewBooking />} />
-
-                {/* Default */}
-                <Route path="*" element={<Navigate to="/booking" replace />} />
-              </Routes>
-            </BookingProvider>
-          </BrowserRouter>
-        </div>
-      </main>
-    </div>
+            {/* Horizons Booking Legacy integrado dentro del layout maestro */}
+            <Route path="booking" element={<RoomSelection />} />
+            <Route path="hotel/:hotelSlug/reservar" element={<RoomSelection />} />
+            <Route path="hotel/:hotelSlug/huespedes" element={<GuestDetails />} />
+            <Route path="hotel/:hotelSlug/confirmar" element={<ReviewBooking />} />
+            
+            {/* Fallbacks */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BookingProvider>
+    </BrowserRouter>
   )
 }
+
+export default AppShell;

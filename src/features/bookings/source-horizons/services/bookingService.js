@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../../../../lib/supabaseClient'
 import { format } from 'date-fns'
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-)
 
 const N8N_WEBHOOK = 'https://n8n-n8n.xaruuo.easypanel.host/webhook/horizons-booking-api'
 
