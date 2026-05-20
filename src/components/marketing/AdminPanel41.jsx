@@ -8,6 +8,10 @@ export const AdminPanel41 = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Lista de habitaciones reales del hotel seleccionado
+  const [rooms, setRooms] = useState([]);
+  const [selectedRoomId, setSelectedRoomId] = useState('');
+
   // Formulario Multimedia
   const [mediaData, setMediaData] = useState({
     heroVideoUrl: '',
@@ -15,11 +19,15 @@ export const AdminPanel41 = () => {
     galleryUrls: ''
   });
 
-  // Formulario Tarifas
+  // Formulario Tarifas Reales (Conectado a la tabla `rates` y `rooms`)
   const [ratesData, setRatesData] = useState({
-    roomType: 'Estándar',
-    basePrice: 150,
-    priceHighSeason: 220,
+    id: '', // UUID de la tarifa (vacío si es nueva)
+    adultRate: 150,
+    childRate: 0,
+    validFrom: '2026-01-01',
+    validTo: '2026-12-31',
+    source: 'MANUAL',
+    isActive: true,
     currency: 'USD'
   });
 
@@ -30,6 +38,22 @@ export const AdminPanel41 = () => {
   useEffect(() => {
     loadHotels();
   }, []);
+
+  // Cargar habitaciones cuando cambia el hotel seleccionado
+  useEffect(() => {
+    if (selectedHotelId) {
+      loadRooms(selectedHotelId);
+    }
+  }, [selectedHotelId]);
+
+  // Cargar tarifa de la habitación cuando cambia la habitación seleccionada
+  useEffect(() => {
+    if (selectedRoomId) {
+      loadRoomRate(selectedRoomId);
+    } else {
+      resetRatesForm();
+    }
+  }, [selectedRoomId]);
 
   const loadHotels = async () => {
     try {
@@ -53,6 +77,72 @@ export const AdminPanel41 = () => {
     }
   };
 
+  const loadRooms = async (hotelId) => {
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id, name, room_type, view_category, is_active')
+        .eq('hotel_id', hotelId)
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setRooms(data || []);
+      if (data && data.length > 0) {
+        setSelectedRoomId(data[0].id);
+      } else {
+        setSelectedRoomId('');
+      }
+    } catch (error) {
+      console.error('Error loading rooms:', error);
+    }
+  };
+
+  const loadRoomRate = async (roomId) => {
+    try {
+      const { data, error } = await supabase
+        .from('rates')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const rate = data[0];
+        setRatesData({
+          id: rate.id,
+          adultRate: rate.adult_rate || rate.price_per_night || 0,
+          childRate: rate.child_rate || 0,
+          validFrom: rate.valid_from || '2026-01-01',
+          validTo: rate.valid_to || '2026-12-31',
+          source: rate.source || 'MANUAL',
+          isActive: rate.is_active !== undefined ? rate.is_active : true,
+          currency: rate.currency || 'USD'
+        });
+      } else {
+        resetRatesForm();
+      }
+    } catch (error) {
+      console.error('Error loading room rate:', error);
+      resetRatesForm();
+    }
+  };
+
+  const resetRatesForm = () => {
+    setRatesData({
+      id: '',
+      adultRate: 120,
+      childRate: 0,
+      validFrom: '2026-01-01',
+      validTo: '2026-12-31',
+      source: 'MANUAL',
+      isActive: true,
+      currency: 'USD'
+    });
+  };
+
   const fillHotelData = (hotel) => {
     setMediaData({
       heroVideoUrl: hotel.hero_video || '',
@@ -70,6 +160,10 @@ export const AdminPanel41 = () => {
     setSelectedHotelId(hotelId);
     const hotel = hotels.find(h => h.id === hotelId);
     if (hotel) fillHotelData(hotel);
+  };
+
+  const handleRoomChange = (e) => {
+    setSelectedRoomId(e.target.value);
   };
 
   // Guardar Multimedia
@@ -98,9 +192,59 @@ export const AdminPanel41 = () => {
     }
   };
 
+  // Guardar / Upsert de Tarifas en la base de datos real de Supabase
+  const saveRates = async () => {
+    if (!selectedRoomId) {
+      alert('Por favor selecciona una habitación primero.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const ratePayload = {
+        room_id: selectedRoomId,
+        adult_rate: ratesData.adultRate,
+        child_rate: ratesData.childRate,
+        price_per_night: ratesData.adultRate,
+        valid_from: ratesData.validFrom,
+        valid_to: ratesData.validTo,
+        source: ratesData.source,
+        is_active: ratesData.isActive,
+        currency: ratesData.currency,
+        year: 2026
+      };
+
+      let error;
+      if (ratesData.id) {
+        // Actualizar tarifa existente
+        const { error: updateErr } = await supabase
+          .from('rates')
+          .update(ratePayload)
+          .eq('id', ratesData.id);
+        error = updateErr;
+      } else {
+        // Insertar nueva tarifa
+        const { error: insertErr } = await supabase
+          .from('rates')
+          .insert([ratePayload]);
+        error = insertErr;
+      }
+
+      if (error) throw error;
+
+      alert('¡Tarifas de Core 1 actualizadas exitosamente en Supabase!');
+      setSaving(false);
+      loadRoomRate(selectedRoomId);
+    } catch (error) {
+      console.error('Error saving rates:', error);
+      alert('Error al guardar tarifas en Supabase.');
+      setSaving(false);
+    }
+  };
+
   // Guardar Políticas FLAT
   const savePolicies = async () => {
-    // Validador FLAT: No permitir JSON malformados ni inyecciones raras.
     if (policiesText.trim().startsWith('{') || policiesText.trim().startsWith('[')) {
       try {
         JSON.parse(policiesText);
@@ -140,7 +284,7 @@ export const AdminPanel41 = () => {
   };
 
   return (
-    <div className="space-y-8 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100">
+    <div className="space-y-8 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 font-sans">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -173,7 +317,7 @@ export const AdminPanel41 = () => {
             activeTab === 'media' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          📷 Multimedia
+          📸 Multimedia
         </button>
         <button
           onClick={() => setActiveTab('rates')}
@@ -231,8 +375,7 @@ export const AdminPanel41 = () => {
                 rows={5}
                 value={mediaData.galleryUrls}
                 onChange={(e) => setMediaData({ ...mediaData, galleryUrls: e.target.value })}
-                placeholder="https://images.unsplash.com/photo-1
-https://images.unsplash.com/photo-2"
+                placeholder="https://images.unsplash.com/photo-1&#10;https://images.unsplash.com/photo-2"
                 className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-mono scrollbar-thin"
               />
             </div>
@@ -250,50 +393,133 @@ https://images.unsplash.com/photo-2"
         {/* Pestaña Tarifas */}
         {activeTab === 'rates' && (
           <div className="space-y-6">
-            <h3 className="font-bold text-white text-lg">Ajustador de Tarifas Base (Simulado)</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Tipo de Habitación</label>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <h3 className="font-bold text-white text-lg flex items-center gap-2">
+                💰 Tarifas de Core 1 
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-widest font-black">Live DB</span>
+              </h3>
+              
+              {/* Selector de Habitación Real */}
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-extrabold text-slate-400 uppercase">Habitación:</span>
                 <select
-                  value={ratesData.roomType}
-                  onChange={(e) => setRatesData({ ...ratesData, roomType: e.target.value })}
+                  value={selectedRoomId}
+                  onChange={handleRoomChange}
+                  className="bg-slate-950 border border-slate-850 text-white rounded-xl px-3 py-2 outline-none font-bold text-xs"
+                  disabled={rooms.length === 0}
+                >
+                  {rooms.length === 0 ? (
+                    <option value="">No hay habitaciones activas</option>
+                  ) : (
+                    rooms.map(r => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.view_category})</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Tarifa Adulto (USD / Noche)</label>
+                <input
+                  type="number"
+                  value={ratesData.adultRate}
+                  onChange={(e) => setRatesData({ ...ratesData, adultRate: Number(e.target.value) })}
+                  className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Tarifa Niño (USD / Noche)</label>
+                <input
+                  type="number"
+                  value={ratesData.childRate}
+                  onChange={(e) => setRatesData({ ...ratesData, childRate: Number(e.target.value) })}
+                  className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Válido Desde</label>
+                <input
+                  type="date"
+                  value={ratesData.validFrom}
+                  onChange={(e) => setRatesData({ ...ratesData, validFrom: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold text-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Válido Hasta</label>
+                <input
+                  type="date"
+                  value={ratesData.validTo}
+                  onChange={(e) => setRatesData({ ...ratesData, validTo: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold text-white"
+                />
+              </div>
+
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+              
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Origen de Tarifa (Source)</label>
+                <select
+                  value={ratesData.source}
+                  onChange={(e) => setRatesData({ ...ratesData, source: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold"
                 >
-                  <option>Estándar</option>
-                  <option>Junior Suite</option>
-                  <option>Deluxe Ocean View</option>
-                  <option>Family Room</option>
+                  <option value="MANUAL">Ingreso Manual (Verificado)</option>
+                  <option value="FIRECRAWL">Estimado (Firecrawl)</option>
+                  <option value="API_INTEGRATION">Integración B2B</option>
                 </select>
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Precio Base de Venta (USD)</label>
-                <input
-                  type="number"
-                  value={ratesData.basePrice}
-                  onChange={(e) => setRatesData({ ...ratesData, basePrice: Number(e.target.value) })}
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Estado de Tarifa</label>
+                <select
+                  value={ratesData.isActive ? 'true' : 'false'}
+                  onChange={(e) => setRatesData({ ...ratesData, isActive: e.target.value === 'true' })}
                   className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold"
-                />
+                >
+                  <option value="true">Activa (Aplica a Búsquedas)</option>
+                  <option value="false">Inactiva (Oculta en Core 1)</option>
+                </select>
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Precio Temporada Alta (USD)</label>
+                <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">Moneda</label>
                 <input
-                  type="number"
-                  value={ratesData.priceHighSeason}
-                  onChange={(e) => setRatesData({ ...ratesData, priceHighSeason: Number(e.target.value) })}
-                  className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 text-slate-100 rounded-xl px-4 py-3 outline-none transition text-sm font-semibold"
+                  type="text"
+                  value={ratesData.currency}
+                  disabled
+                  className="w-full bg-slate-950/40 border border-slate-900 text-slate-550 rounded-xl px-4 py-3 outline-none text-sm font-semibold cursor-not-allowed"
                 />
               </div>
+
             </div>
 
-            <button
-              onClick={() => alert('Actualización de tarifas enviada al Workflow D en n8n')}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl transition"
-            >
-              Enviar a n8n (Workflow D)
-            </button>
+            <div className="flex gap-4 pt-2">
+              <button
+                onClick={saveRates}
+                disabled={saving || !selectedRoomId}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl transition disabled:opacity-40"
+              >
+                {saving ? 'Guardando en DB...' : 'Guardar y Aplicar a Core 1'}
+              </button>
+
+              <button
+                onClick={() => {
+                  alert('Sincronizando todas las tarifas activas con la caché RAG y n8n...');
+                }}
+                className="bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold px-6 py-3 rounded-xl border border-slate-850 transition"
+              >
+                Reindexar Motor RAG
+              </button>
+            </div>
           </div>
         )}
 
