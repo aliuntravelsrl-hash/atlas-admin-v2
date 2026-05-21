@@ -1,12 +1,26 @@
 import { useState, useEffect } from 'react';
 
 export const MissionControlLive = () => {
+  const [activeTab, setActiveTab] = useState('workflows');
+  
   const [agents] = useState([
     { name: 'Hermes Translator', role: 'Voucher Delivery', status: 'Online', lastActive: 'Hace 2 min' },
     { name: 'Claw Booking Agent', role: 'Reservation Sync', status: 'Online', lastActive: 'Hace 1 min' },
     { name: 'Horizons Copywriter', role: 'Content Generator', status: 'Busy', lastActive: 'Procesando' },
     { name: 'Aliun Auditor', role: 'Quality Assurance', status: 'Online', lastActive: 'Hace 5 min' },
     { name: 'Kommo Connector', role: 'CRM Pipeline Sync', status: 'Offline', lastActive: 'Hace 1 hora' }
+  ]);
+
+  const [n8nWorkflows] = useState([
+    { name: 'WF-A: Agente IA Ventas', id: '0ps4wRmBFXcAy0u2', type: 'Webhook', status: 'Live', dept: 'ATLAS-SALES' },
+    { name: 'WF-A-HUM: Humanización', id: 'WF-A-HUMANIZACION', type: 'Sub-Flow', status: 'Live', dept: 'ATLAS-SALES' },
+    { name: 'WF-REINDEX: Reindex RAG', id: 'gWWeTx9biC9obZsy', type: 'Webhook/Cron', status: 'Live', dept: 'ATLAS-OPS' },
+    { name: 'WF-BOOKING-API', id: 'fkeayENDXynocb8I', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' },
+    { name: 'WF-BOOKING-FULFILLMENT', id: 'UrFIhdYw7EOLFnQd', type: 'Webhook/Queue', status: 'Live', dept: 'ATLAS-OPS' },
+    { name: 'Flujo C - Cotización PDF', id: 'Da46ZVQGRpdgaI02', type: 'Webhook', status: 'Live', dept: 'ATLAS-FINANCE' },
+    { name: 'Flujo F - Voucher Hotel', id: 'T89xnmHoKMrFMhnT', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' },
+    { name: 'Flujo K - Confirmación PDF', id: 'clJ7YfPfzOLZSS0P', type: 'Webhook', status: 'Live', dept: 'ATLAS-FINANCE' },
+    { name: 'Ingesta Tarifas Core 1', id: 'OJFIUi2OcwEqMaF6', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' }
   ]);
 
   const [tasks] = useState([
@@ -62,31 +76,63 @@ export const MissionControlLive = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Lista de Agentes */}
+        {/* Lista de Agentes / Workflows */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h3 className="font-bold text-white text-lg flex items-center gap-2">
-            <span>🤖 Estado de Agentes</span>
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <button
+              onClick={() => setActiveTab('workflows')}
+              className={`font-bold text-sm transition-all pb-1 border-b-2 ${
+                activeTab === 'workflows' ? 'text-blue-400 border-blue-500' : 'text-slate-500 border-transparent hover:text-slate-300'
+              }`}
+            >
+              🔄 n8n Services
+            </button>
+            <button
+              onClick={() => setActiveTab('agents')}
+              className={`font-bold text-sm transition-all pb-1 border-b-2 ${
+                activeTab === 'agents' ? 'text-blue-400 border-blue-500' : 'text-slate-500 border-transparent hover:text-slate-300'
+              }`}
+            >
+              🤖 Agentes IA
+            </button>
+          </div>
 
-          <div className="space-y-3">
-            {agents.map((agent, i) => (
-              <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
-                <div>
-                  <div className="font-bold text-white text-sm">{agent.name}</div>
-                  <div className="text-[10px] text-slate-500 font-semibold mt-0.5">{agent.role}</div>
+          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+            {activeTab === 'agents' ? (
+              agents.map((agent, i) => (
+                <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
+                  <div>
+                    <div className="font-bold text-white text-sm">{agent.name}</div>
+                    <div className="text-[10px] text-slate-500 font-semibold mt-0.5">{agent.role}</div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md border ${
+                      agent.status === 'Online' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                      agent.status === 'Busy' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                      'bg-slate-800 border-slate-700 text-slate-500'
+                    }`}>
+                      {agent.status}
+                    </span>
+                    <div className="text-[9px] text-slate-500 mt-1 font-bold">{agent.lastActive}</div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md border ${
-                    agent.status === 'Online' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                    agent.status === 'Busy' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                    'bg-slate-800 border-slate-700 text-slate-500'
-                  }`}>
-                    {agent.status}
-                  </span>
-                  <div className="text-[9px] text-slate-500 mt-1 font-bold">{agent.lastActive}</div>
+              ))
+            ) : (
+              n8nWorkflows.map((wf, i) => (
+                <div key={i} className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
+                  <div>
+                    <div className="font-bold text-white text-xs">{wf.name}</div>
+                    <div className="text-[9px] text-slate-500 font-mono mt-0.5">ID: {wf.id} | {wf.type}</div>
+                  </div>
+                  <div className="text-right">
+                    <span className="px-2 py-0.5 text-[8px] font-black uppercase rounded-md border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
+                      {wf.status}
+                    </span>
+                    <div className="text-[8px] text-blue-400 mt-1 font-extrabold uppercase tracking-wider">{wf.dept}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 

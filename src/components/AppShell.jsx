@@ -16,6 +16,10 @@ import WarRoomV41 from './marketing/WarRoomV41'
 import IntegrityMonitor from './marketing/IntegrityMonitor'
 import AdminPanel41 from './marketing/AdminPanel41'
 import MissionControlLive from './marketing/MissionControlLive'
+import PipelineKanban from './marketing/PipelineKanban'
+import CrmDashboard from './marketing/CrmDashboard'
+import ApiToolbox from '../features/api-toolbox/pages/ApiToolbox'
+
 
 export function AppShell() {
   return (
@@ -33,6 +37,10 @@ export function AppShell() {
             <Route path="integrity" element={<IntegrityMonitor />} />
             <Route path="admin41" element={<AdminPanel41 />} />
             <Route path="mission" element={<MissionControlLive />} />
+            <Route path="crm/pipeline" element={<PipelineKanban />} />
+            <Route path="crm/dashboard" element={<CrmDashboard />} />
+            <Route path="api-toolbox" element={<ApiToolbox />} />
+
 
             {/* Rutas de Marketing */}
             <Route path="marketing/offers" element={<MarketingOffersPanel />} />

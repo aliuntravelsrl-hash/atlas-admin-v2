@@ -40,6 +40,19 @@ export const IntegrityMonitor = () => {
     try {
       setAuditing(true);
       
+      // Invocar webhook de n8n para auditar a demanda
+      try {
+        await fetch('https://n8n-n8n.xaruuo.easypanel.host/webhook/integrity-audit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ hotel_id: hotelId })
+        });
+      } catch (e) {
+        console.warn('n8n integrity-audit webhook error (proceeding with local DB check):', e);
+      }
+      
       // 1. Obtener hotel de hotels_master
       const { data: hotel, error: hotelError } = await supabase
         .from('hotels_master')
