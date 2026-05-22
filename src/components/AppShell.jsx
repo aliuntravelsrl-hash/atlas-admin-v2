@@ -20,6 +20,14 @@ import PipelineKanban from './marketing/PipelineKanban'
 import CrmDashboard from './marketing/CrmDashboard'
 import ApiToolbox from '../features/api-toolbox/pages/ApiToolbox'
 
+// Admin Core 2 Components & Pages
+import AdminHotelsPage from '../pages/admin/AdminHotelsPage'
+import HotelsInventoryDashboard from './admin/HotelsInventoryDashboard'
+import AdminRatesPage from '../pages/admin/AdminRatesPage'
+import AdminSeasonsPage from '../pages/admin/AdminSeasonsPage'
+import AdminBookingsPanel from './admin/AdminBookingsPanel'
+import AdminPricingPage from '../pages/admin/AdminPricingPage'
+
 
 export function AppShell() {
   return (
@@ -40,6 +48,14 @@ export function AppShell() {
             <Route path="crm/pipeline" element={<PipelineKanban />} />
             <Route path="crm/dashboard" element={<CrmDashboard />} />
             <Route path="api-toolbox" element={<ApiToolbox />} />
+
+            {/* Admin Core 2 Routes */}
+            <Route path="admin/hotels" element={<AdminHotelsPage />} />
+            <Route path="admin/inventory" element={<HotelsInventoryDashboard />} />
+            <Route path="admin/tarifas" element={<AdminRatesPage />} />
+            <Route path="admin/temporadas" element={<AdminSeasonsPage />} />
+            <Route path="admin/bookings" element={<AdminBookingsPanel />} />
+            <Route path="admin/pricing" element={<AdminPricingPage />} />
 
 
             {/* Rutas de Marketing */}

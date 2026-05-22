@@ -94,38 +94,46 @@ export const HorizonsLayout = () => {
       current: location.pathname === '/api-toolbox'
     },
     {
-      name: 'Atlas Admin 🗺️',
-      icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-        </svg>
-      ),
-      href: '/',
-      current: location.pathname === '/'
+      name: 'Hoteles Maestro 🏨',
+      icon: '🏨',
+      href: '/admin/hotels',
+      current: location.pathname === '/admin/hotels'
     },
     {
-      name: 'Auditoría de Hoteles',
-      icon: '🔍',
-      href: '/integrity',
-      current: false
+      name: 'Habitaciones/Inventario 🛏️',
+      icon: '🛏️',
+      href: '/admin/inventory',
+      current: location.pathname === '/admin/inventory'
     },
     {
-      name: 'Usuarios Admin',
-      icon: '👥',
-      href: '/settings',
-      current: false
+      name: 'Tarifas y Precios 💵',
+      icon: '💵',
+      href: '/admin/tarifas',
+      current: location.pathname.startsWith('/admin/tarifas')
     },
     {
-      name: 'Configurar Servicios',
-      icon: '⚙️',
-      href: '/settings',
-      current: false
+      name: 'Temporadas 📅',
+      icon: '📅',
+      href: '/admin/temporadas',
+      current: location.pathname === '/admin/temporadas'
     },
     {
-      name: 'Galería (FASE 1)',
+      name: 'Reservas / Bookings 🎟️',
+      icon: '🎟️',
+      href: '/admin/bookings',
+      current: location.pathname === '/admin/bookings'
+    },
+    {
+      name: 'Cotizador de Viajes ✈️',
+      icon: '✈️',
+      href: '/admin/pricing',
+      current: location.pathname === '/admin/pricing'
+    },
+    {
+      name: 'Galería (Ofertas) 🖼️',
       icon: '🖼️',
       href: '/marketing/offers',
-      current: false
+      current: location.pathname.startsWith('/marketing/offers')
     }
   ];
 
