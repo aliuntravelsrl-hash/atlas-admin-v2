@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabaseClient';
 export const MissionControlLive = () => {
   const [activeTab, setActiveTab] = useState('workflows');
   
-  // Catálogo descriptivo de agentes del ecosistema Aliun
+  // Catálogo estructural de agentes de Aliun
   const [agents, setAgents] = useState([
     { name: 'Hermes Translator', role: 'Voucher Delivery', status: 'Online', lastActive: 'Hace 2 min' },
     { name: 'Claw Booking Agent', role: 'Reservation Sync', status: 'Online', lastActive: 'Hace 1 min' },
@@ -25,167 +25,179 @@ export const MissionControlLive = () => {
     { name: 'Ingesta Tarifas Core 1', id: 'OJFIUi2OcwEqMaF6', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' }
   ]);
 
-  // Estados dinámicos de integración real
-  const [systemStatus, setSystemStatus] = useState({ status: 'connecting', version: '-', tools: 0 });
-  const [bookingStats, setBookingStats] = useState({ total: 0, pending: 0, paid: 0, confirmed: 0, cancelled: 0 });
-  const [paidNoVoucherCount, setPaidNoVoucherCount] = useState(0);
+  // Estados reales conectados a Supabase y n8n
+  const [systemStatus, setSystemStatus] = useState({ mcp: '🔴', n8n: '🔴', supabase: '🔴', mcpVersion: '—', mcpTools: 0 });
+  const [bookingStats, setBookingStats] = useState({ total: 0, paid: 0, pending: 0, confirmed: 0, cancelled: 0 });
+  const [criticalNoVoucher, setCriticalNoVoucher] = useState([]);
+  const [warningNoVoucher, setWarningNoVoucher] = useState([]);
+  const [recentActivity, setRecentActivity] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [logs, setLogs] = useState([
-    { id: 1, time: '10:44:05', text: 'Hermes Translator comenzó renderizado de PDF.', severity: 'INFO' },
-    { id: 2, time: '10:43:52', text: 'Solicitud de reserva ingresada desde la web pública.', severity: 'INFO' },
-    { id: 3, time: '10:42:10', text: 'Aprobación del Director requerida para tarifas Lopesan.', severity: 'WARNING' },
-    { id: 4, time: '10:40:15', text: 'Claw Booking Agent sincronizó 15 nuevas tarifas con Supabase.', severity: 'SUCCESS' }
-  ]);
 
-  // Configuración de endpoint dinámico de n8n
-  const rawWebhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || "https://n8n-n8n.xaruuo.easypanel.host/webhook/reserva_logic";
-  const mcpHealthUrl = rawWebhookUrl.replace(/\/webhook\/[^\/]+$/, '/webhook/mcp-health');
-
-  // 1. Polling de Salud de MCP (cada 30 segundos)
+  // 1. Polling de Salud del Sistema MCP / n8n (cada 30s)
   useEffect(() => {
-    const fetchMcpHealth = async () => {
+    const fetchSystemStatus = async () => {
       try {
-        const response = await fetch(mcpHealthUrl);
-        if (response.ok) {
-          const data = await response.json();
+        const res = await fetch('https://n8n-n8n.xaruuo.easypanel.host/webhook/mcp-health');
+        if (res.ok) {
+          const data = await res.json();
           setSystemStatus({
-            status: data.status || 'ok',
-            version: data.version || '1.3.1',
-            tools: data.tools || 13
+            mcp: data.status === 'ok' ? '🟢' : '🔴',
+            mcpVersion: data.version || '—',
+            mcpTools: data.tools || 0,
+            supabase: data.supabase === 'connected' ? '🟢' : '🔴',
+            n8n: '🟢'
           });
-          // Actualizar estado del agente Hermes en la UI
           setAgents(prev => prev.map(a => 
-            a.name === 'Hermes Translator' ? { ...a, status: 'Online', lastActive: 'Activo ahora' } : a
+            a.name === 'Hermes Translator' ? { ...a, status: data.status === 'ok' ? 'Online' : 'Offline', lastActive: 'Recién verificado' } : a
           ));
         } else {
-          setSystemStatus({ status: 'offline', version: 'error', tools: 0 });
-          setAgents(prev => prev.map(a => 
-            a.name === 'Hermes Translator' ? { ...a, status: 'Offline', lastActive: 'Error de respuesta' } : a
-          ));
+          setSystemStatus({ mcp: '🔴', n8n: '🟢', supabase: '🔴', mcpVersion: 'error', mcpTools: 0 });
         }
       } catch (err) {
-        console.error('Error fetching MCP health:', err);
-        setSystemStatus({ status: 'offline', version: 'desconectado', tools: 0 });
-        setAgents(prev => prev.map(a => 
-          a.name === 'Hermes Translator' ? { ...a, status: 'Offline', lastActive: 'Error de red' } : a
-        ));
+        console.error('Error fetching system status:', err);
+        setSystemStatus({ mcp: '🔴', n8n: '🔴', supabase: '🔴', mcpVersion: 'desconectado', mcpTools: 0 });
       }
     };
 
-    fetchMcpHealth();
-    const interval = setInterval(fetchMcpHealth, 30000);
+    fetchSystemStatus();
+    const interval = setInterval(fetchSystemStatus, 30000);
     return () => clearInterval(interval);
-  }, [mcpHealthUrl]);
+  }, []);
 
-  // 2. Polling de Estadísticas y Brechas en Supabase (cada 60 segundos)
+  // 2. Polling de Estadísticas de Reservas y Actividad Reciente (cada 60s)
   useEffect(() => {
-    const fetchDatabaseMetrics = async () => {
+    const fetchDatabaseData = async () => {
       try {
-        const { data: bookingsData, error } = await supabase
+        // A. Booking Stats
+        const { count: total } = await supabase
           .from('bookings')
-          .select('id, guest_name, status, payment_status, voucher_code, voucher_id');
+          .select('*', { count: 'exact', head: true });
 
-        if (error) throw error;
+        const { count: paid } = await supabase
+          .from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('payment_status', 'paid');
 
-        const stats = { total: 0, pending: 0, paid: 0, confirmed: 0, cancelled: 0 };
-        const missingVouchersList = [];
-        let gapCount = 0;
+        const { count: pending } = await supabase
+          .from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('payment_status', 'pending');
 
-        bookingsData.forEach(b => {
-          stats.total++;
-          if (b.status === 'pending_validation') stats.pending++;
-          if (b.status === 'cancelled') stats.cancelled++;
-          if (b.status === 'confirmed' || b.status === 'completed') stats.confirmed++;
-          
-          if (b.payment_status === 'paid') {
-            stats.paid++;
-            
-            // Lógica ajustada del usuario: voucher_code es nulo OR voucher_id es nulo (cualquiera falta = gap)
-            if (!b.voucher_code || !b.voucher_id) {
-              gapCount++;
-              missingVouchersList.push({
-                id: `GAP-${b.id.substring(0, 8).toUpperCase()}`,
-                description: `Alerta: Reserva #${b.id.substring(0, 6)} de ${b.guest_name || 'Huésped'} pagada sin Voucher.`,
-                priority: 'SEV1',
-                status: !b.voucher_code ? 'Falta código' : 'Falta archivo PDF'
-              });
-            }
-          }
-        });
+        const { count: confirmed } = await supabase
+          .from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'confirmed');
 
-        setBookingStats(stats);
-        setPaidNoVoucherCount(gapCount);
+        const { count: cancelled } = await supabase
+          .from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'cancelled');
 
-        // Actualizar tareas del sistema con las brechas reales + tareas mock complementarias
+        setBookingStats({ total: total || 0, paid: paid || 0, pending: pending || 0, confirmed: confirmed || 0, cancelled: cancelled || 0 });
+
+        // B. Alerta: Gaps de Vouchers
+        const { data: gapBookings } = await supabase
+          .from('bookings')
+          .select('id, booking_reference, total_amount, currency, created_at, guest_name, voucher_code, voucher_id')
+          .eq('payment_status', 'paid')
+          .or('voucher_code.is.null,voucher_id.is.null');
+
+        const totalGaps = gapBookings || [];
+        
+        // Faltan ambos: Brecha Total (SEV1 Rojo)
+        const criticalList = totalGaps.filter(b => b.voucher_code === null && b.voucher_id === null);
+        // Falta solo uno: Brecha Parcial (SEV2 Amarillo)
+        const warningList = totalGaps.filter(b => (b.voucher_code === null && b.voucher_id !== null) || (b.voucher_code !== null && b.voucher_id === null));
+
+        setCriticalNoVoucher(criticalList);
+        setWarningNoVoucher(warningList);
+
+        // Actualizar tareas con las brechas reales de severidad SEV1 y SEV2 + tareas mock
+        const criticalTasks = criticalList.map(b => ({
+          id: `GAP-CRIT-${b.booking_reference || b.id.substring(0, 6).toUpperCase()}`,
+          description: `Brecha SEV1: Reserva ${b.booking_reference || b.id.substring(0, 6)} sin voucher_code ni voucher_id.`,
+          priority: 'SEV1',
+          status: 'Crítico - Pendiente Hermes'
+        }));
+
+        const warningTasks = warningList.map(b => ({
+          id: `GAP-WARN-${b.booking_reference || b.id.substring(0, 6).toUpperCase()}`,
+          description: `Brecha SEV2: Reserva ${b.booking_reference || b.id.substring(0, 6)} con voucher incompleto (${b.voucher_code ? 'falta URL' : 'falta código'}).`,
+          priority: 'SEV2',
+          status: 'Advertencia - Gap Parcial'
+        }));
+
         const mockTasks = [
           { id: 'TSK-9399', description: 'Traducción de reseña en RAG Cache', priority: 'SEV3', status: 'Processing' },
           { id: 'TSK-9395', description: 'Creación de Copia de Oferta WhatsApp', priority: 'SEV2', status: 'Awaiting approval' }
         ];
-        setTasks([...missingVouchersList, ...mockTasks]);
+        setTasks([...criticalTasks, ...warningTasks, ...mockTasks]);
 
-        // Si hay brechas, inyectar log crítico
-        if (gapCount > 0) {
-          const timeString = new Date().toTimeString().split(' ')[0];
-          setLogs(prev => {
-            const hasLog = prev.some(l => l.text.includes('Brecha de Integridad detectada'));
-            if (hasLog) return prev;
-            return [
-              {
-                id: Date.now(),
-                time: timeString,
-                text: `Brecha de Integridad detectada: ${gapCount} reserva(s) pagada(s) carecen de voucher_code o voucher_id.`,
-                severity: 'ERROR'
-              },
-              ...prev
-            ];
-          });
-        }
+        // C. Actividad Reciente de Bookings
+        const { data: recent } = await supabase
+          .from('bookings')
+          .select('booking_reference, status, payment_status, created_at, total_amount, currency, guest_name')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        setRecentActivity(recent || []);
 
       } catch (err) {
         console.error('Error fetching database metrics:', err);
       }
     };
 
-    fetchDatabaseMetrics();
-    const interval = setInterval(fetchDatabaseMetrics, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Simulación interactiva de logs vivos (cada 15s)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const timeString = now.toTimeString().split(' ')[0];
-      const randomLogs = [
-        { time: timeString, text: 'Agent heartbeat recibido en canal de control.', severity: 'INFO' },
-        { time: timeString, text: 'Verificación periódica de calidad de hoteles maestro completada.', severity: 'SUCCESS' },
-        { time: timeString, text: 'Consulta RAG realizada con éxito al catálogo de Lopesan.', severity: 'INFO' },
-        { time: timeString, text: 'Sincronización de pipeline con Kommo completada sin errores.', severity: 'SUCCESS' }
-      ];
-      const selectedLog = randomLogs[Math.floor(Math.random() * randomLogs.length)];
-      setLogs(prev => [
-        { id: Date.now(), ...selectedLog },
-        ...prev.slice(0, 12)
-      ]);
-    }, 15000);
-
+    fetchDatabaseData();
+    const interval = setInterval(fetchDatabaseData, 60000);
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="space-y-8 bg-slate-950 p-6 rounded-2xl border border-slate-800 text-slate-100 shadow-2xl">
       
-      {/* Alerta Crítica PaidNoVoucher */}
-      {paidNoVoucherCount > 0 && (
-        <div className="bg-rose-500/10 border-2 border-rose-500 text-rose-200 p-4 rounded-xl flex items-center justify-between gap-4 animate-pulse">
+      {/* Banner de Alerta Crítica (SEV1 - Faltan Ambos) */}
+      {criticalNoVoucher.length > 0 && (
+        <div className="bg-rose-950/40 border border-rose-500 text-rose-200 p-4 rounded-xl flex flex-col gap-3 animate-pulse shadow-lg">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-500 font-extrabold text-xl">⚠️</div>
+            <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-500 font-extrabold text-xl">🚨</div>
             <div>
-              <h4 className="font-extrabold text-white text-base">Alerta Crítica: Brecha de Integridad Detectada</h4>
-              <p className="text-xs text-rose-300 font-medium">Hay {paidNoVoucherCount} reserva(s) con pago aprobado ('paid') que no tienen voucher_code o voucher_id asociado en base de datos.</p>
+              <h4 className="font-extrabold text-white text-base">Brecha de Integridad Crítica (SEV1): {criticalNoVoucher.length} Reserva(s) Pagada(s) sin Voucher</h4>
+              <p className="text-xs text-rose-300 font-medium">Hermes Translator no generó ningún código de voucher (voucher_code) ni enlace PDF (voucher_id).</p>
             </div>
           </div>
-          <span className="bg-rose-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full border border-rose-400">SEV1 Activo</span>
+          <div className="space-y-2 border-t border-rose-900/60 pt-2.5">
+            {criticalNoVoucher.map(b => (
+              <div key={b.id} className="text-xs flex items-center justify-between bg-rose-950/60 border border-rose-900/40 px-3 py-1.5 rounded-lg text-rose-300">
+                <span className="font-bold">{b.booking_reference || 'REF-N/A'} — {b.guest_name || 'Huésped'}</span>
+                <span className="font-mono bg-rose-500/20 px-2 py-0.5 rounded text-[10px] text-rose-200">
+                  {b.currency || 'USD'} {Number(b.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Banner de Advertencia Parcial (SEV2 - Falta Uno) */}
+      {warningNoVoucher.length > 0 && (
+        <div className="bg-amber-950/40 border border-amber-500 text-amber-250 p-4 rounded-xl flex flex-col gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 font-extrabold text-xl">⚠️</div>
+            <div>
+              <h4 className="font-extrabold text-white text-base">Advertencia de Integridad Parcial (SEV2): {warningNoVoucher.length} Reserva(s) con Voucher Incompleto</h4>
+              <p className="text-xs text-amber-300 font-medium">Falta uno de los campos requeridos (voucher_code o voucher_id) en el registro de la reserva.</p>
+            </div>
+          </div>
+          <div className="space-y-2 border-t border-amber-900/60 pt-2.5">
+            {warningNoVoucher.map(b => (
+              <div key={b.id} className="text-xs flex items-center justify-between bg-amber-950/60 border border-amber-900/40 px-3 py-1.5 rounded-lg text-amber-300">
+                <span className="font-bold">{b.booking_reference || 'REF-N/A'} — {b.guest_name || 'Huésped'}</span>
+                <span className="font-mono bg-amber-500/20 px-2 py-0.5 rounded text-[10px] text-amber-200">
+                  Falta: {b.voucher_code === null ? 'Código de Confirmación' : 'URL de Voucher PDF'}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -197,28 +209,34 @@ export const MissionControlLive = () => {
             <span className="text-xs bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full uppercase tracking-wider font-extrabold border border-emerald-500/30">Live</span>
           </h1>
           <p className="text-slate-400 mt-1 font-medium text-sm">
-            Monitor de estado operacional en vivo de los agentes autónomos e integraciones de Aliun Travel.
+            Monitor en tiempo real del ecosistema tecnológico, agentes y base de datos de Aliun Travel.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${systemStatus.status === 'ok' ? 'bg-emerald-500 animate-ping' : 'bg-rose-500 animate-pulse'}`}></span>
-            <span>MCP Health: {systemStatus.status.toUpperCase()} (v{systemStatus.version})</span>
+            <span>MCP: {systemStatus.mcp}</span>
+            <span className="text-[10px] text-slate-500">v{systemStatus.mcpVersion}</span>
+          </div>
+          <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-2">
+            <span>Supabase: {systemStatus.supabase}</span>
+          </div>
+          <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-2">
+            <span>n8n: {systemStatus.n8n}</span>
           </div>
           <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl text-xs font-bold text-blue-400">
-            Tools Mapeadas: {systemStatus.tools}
+            Tools: {systemStatus.mcpTools}
           </div>
         </div>
       </div>
 
-      {/* KPIs de Integración */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* KPIs de Reservas */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl hover:border-slate-800 transition">
           <div className="text-[10px] uppercase font-bold text-slate-500">Reservas Totales</div>
           <div className="text-2xl font-black text-white mt-1">{bookingStats.total}</div>
         </div>
         <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl hover:border-slate-800 transition">
-          <div className="text-[10px] uppercase font-bold text-slate-500">Pendientes Validación</div>
+          <div className="text-[10px] uppercase font-bold text-slate-500">Pendientes de Pago</div>
           <div className="text-2xl font-black text-amber-400 mt-1">{bookingStats.pending}</div>
         </div>
         <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl hover:border-slate-800 transition">
@@ -226,14 +244,18 @@ export const MissionControlLive = () => {
           <div className="text-2xl font-black text-emerald-400 mt-1">{bookingStats.paid}</div>
         </div>
         <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl hover:border-slate-800 transition">
-          <div className="text-[10px] uppercase font-bold text-slate-500">Confirmadas/Completas</div>
+          <div className="text-[10px] uppercase font-bold text-slate-500">Confirmadas</div>
           <div className="text-2xl font-black text-blue-400 mt-1">{bookingStats.confirmed}</div>
+        </div>
+        <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl hover:border-slate-800 transition">
+          <div className="text-[10px] uppercase font-bold text-slate-500">Canceladas</div>
+          <div className="text-2xl font-black text-slate-500 mt-1">{bookingStats.cancelled}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Lista de Agentes / Workflows */}
+        {/* Sección 1: n8n / Agentes */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <button
@@ -293,7 +315,7 @@ export const MissionControlLive = () => {
           </div>
         </div>
 
-        {/* Cola de Tareas */}
+        {/* Sección 2: Cola de Tareas */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
           <h3 className="font-bold text-white text-lg flex items-center gap-2">
             <span>📋 Tareas del Sistema ({tasks.length})</span>
@@ -301,7 +323,7 @@ export const MissionControlLive = () => {
 
           <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
             {tasks.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 text-xs font-semibold">
+              <div className="text-center py-10 text-slate-500 text-xs font-semibold animate-pulse">
                 No hay tareas pendientes en la cola.
               </div>
             ) : (
@@ -316,33 +338,51 @@ export const MissionControlLive = () => {
                     }`}>{task.priority}</span>
                   </div>
                   <p className="text-xs text-white font-semibold leading-relaxed">{task.description}</p>
-                  <div className={`text-[10px] font-bold uppercase tracking-wider ${task.priority === 'SEV1' ? 'text-rose-400' : 'text-slate-500'}`}>{task.status}</div>
+                  <div className={`text-[10px] font-bold uppercase tracking-wider ${task.priority === 'SEV1' ? 'text-rose-400 font-extrabold' : 'text-slate-500'}`}>{task.status}</div>
                 </div>
               ))
             )}
           </div>
         </div>
 
-        {/* Consola Live Logs */}
+        {/* Sección 3: Transmisión y Registro de Actividad Real */}
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <h3 className="font-bold text-white text-lg flex items-center gap-2">
-              <span>📡 Logs de Transmisión ({logs.length})</span>
+              <span>📡 Registro de Actividad Real</span>
             </h3>
 
-            <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 font-mono text-[10px] space-y-3 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
-              {logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-2 hover:bg-slate-900/50 p-1 rounded transition">
-                  <span className="text-slate-500 flex-shrink-0">{log.time}</span>
-                  <span className={`font-bold px-1.5 py-0.2 rounded text-[8px] flex-shrink-0 ${
-                    log.severity === 'SUCCESS' ? 'bg-emerald-500/15 text-emerald-400' :
-                    log.severity === 'WARNING' ? 'bg-amber-500/15 text-amber-400' :
-                    log.severity === 'ERROR' ? 'bg-rose-500/15 text-rose-400' :
-                    'bg-slate-850 text-slate-400'
-                  }`}>{log.severity}</span>
-                  <span className="text-slate-300 break-words">{log.text}</span>
+            <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 font-mono text-[10px] space-y-3.5 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+              {recentActivity.length === 0 ? (
+                <div className="text-center py-12 text-slate-650 text-xs italic animate-pulse">
+                  Esperando transacciones de reservas...
                 </div>
-              ))}
+              ) : (
+                recentActivity.map((act, idx) => (
+                  <div key={idx} className="flex flex-col gap-1 hover:bg-slate-900/50 p-2 rounded border border-slate-900 transition">
+                    <div className="flex items-center justify-between text-slate-500">
+                      <span>{new Date(act.created_at).toLocaleDateString()} {new Date(act.created_at).toLocaleTimeString()}</span>
+                      <span className="font-bold text-slate-400">{act.booking_reference || 'REF-N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-200 font-medium">
+                      <span>{act.guest_name || 'Huésped'}</span>
+                      <span className="text-blue-400">{act.currency} {Number(act.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`px-2 py-0.2 rounded text-[8px] font-black uppercase ${
+                        act.status === 'confirmed' || act.status === 'completed' ? 'bg-emerald-500/15 text-emerald-400' :
+                        act.status === 'cancelled' ? 'bg-rose-500/15 text-rose-400' :
+                        'bg-amber-500/15 text-amber-400'
+                      }`}>Status: {act.status}</span>
+                      <span className={`px-2 py-0.2 rounded text-[8px] font-black uppercase ${
+                        act.payment_status === 'paid' ? 'bg-emerald-500/15 text-emerald-400' :
+                        act.payment_status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
+                        'bg-slate-800 text-slate-400'
+                      }`}>Pago: {act.payment_status}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -358,4 +398,3 @@ export const MissionControlLive = () => {
 };
 
 export default MissionControlLive;
-
