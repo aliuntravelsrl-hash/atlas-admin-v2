@@ -13,7 +13,11 @@ export const imageUploadService = {
 
     const { error: uploadError } = await supabase.storage
       .from('hotel-images')
-      .upload(filePath, file, { cacheControl: '31536000', upsert: true });
+      .upload(filePath, file, { 
+        cacheControl: '31536000', 
+        upsert: true,
+        contentType: file.type
+      });
 
     if (uploadError) throw uploadError;
 

@@ -36,24 +36,38 @@ const GalleryUpload = ({ hotelId, onUploadComplete }) => {
       const currentGallery = Array.isArray(hotelData.gallery_data)
         ? hotelData.gallery_data : [];
       const newEntries = [];
+      const errors = [];
 
       for (let i = 0; i < total; i++) {
         try {
           const url = await imageUploadService.uploadImage(files[i], hotelId, 'gallery');
+          const generatedId = typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID 
+            ? window.crypto.randomUUID() 
+            : `img_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
           newEntries.push({
+            id: generatedId,
             url,
             scope: 'gallery',
             sort_order: currentGallery.length + newEntries.length,
             title: `Galería ${currentGallery.length + newEntries.length + 1}: ${hotelData.slug}`,
+            is_active: true,
+            metadata: {
+              quality: 'high',
+              resolution: 'unknown'
+            }
           });
           successCount++;
         } catch (e) {
           console.error(`Error con ${files[i].name}:`, e);
+          errors.push(`${files[i].name}: ${e.message}`);
         }
         setProgress(Math.round(((i + 1) / total) * 100));
       }
 
-      if (newEntries.length === 0) throw new Error('Ninguna imagen se subió correctamente.');
+      if (newEntries.length === 0) {
+        throw new Error(`Ninguna imagen se subió correctamente. Detalle: ${errors.join('; ')}`);
+      }
 
       const updatedGallery = [...currentGallery, ...newEntries];
       const noAboutImage   = !hotelData.about_image || hotelData.about_image === '';
