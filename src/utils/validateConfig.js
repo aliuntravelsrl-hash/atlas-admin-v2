@@ -37,9 +37,9 @@ export const validateConfiguration = async () => {
 
   // 3. Test Supabase Connection (General)
   try {
-    const { error } = await supabase.from('hotels').select('count', { count: 'exact', head: true });
+    const { error } = await supabase.from('hotels_master').select('count', { count: 'exact', head: true });
     if (error) throw error;
-    console.log("✅ Supabase Connection Successful (Hotels table accessible)");
+    console.log("✅ Supabase Connection Successful (Hotels Master table accessible)");
     report.connection.supabase = "Connected";
   } catch (error) {
     console.error("❌ Supabase Connection Failed:", error.message);

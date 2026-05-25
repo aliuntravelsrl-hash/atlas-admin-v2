@@ -82,6 +82,8 @@ const AdminBookingsPanel = () => {
           case 'confirmed': 
           case 'paid':
               return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-green-100 text-green-800 border border-green-200"><CheckCircle className="w-3 h-3 mr-1"/> Confirmada</span>;
+          case 'waiting_confirmation':
+              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-200"><Clock className="w-3 h-3 mr-1"/> Modo Espera</span>;
           case 'pending_validation': 
               return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200"><Lock className="w-3 h-3 mr-1"/> Pendiente Pago</span>;
           case 'cancelled': 
@@ -104,7 +106,7 @@ const AdminBookingsPanel = () => {
                     className="pl-8"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                 />
+                  />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[180px]">
@@ -112,8 +114,9 @@ const AdminBookingsPanel = () => {
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="paid">Pagados</SelectItem>
-                    <SelectItem value="pending_validation">Pendientes</SelectItem>
+                    <SelectItem value="paid">Confirmadas / Pagadas</SelectItem>
+                    <SelectItem value="waiting_confirmation">Modo Espera</SelectItem>
+                    <SelectItem value="pending_validation">Pendientes Pago</SelectItem>
                     <SelectItem value="cancelled">Cancelados</SelectItem>
                 </SelectContent>
               </Select>

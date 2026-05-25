@@ -6,11 +6,11 @@
 export const hotelsData = {};
 export const destinations = [];
 export const getAllHotels = async () => {
-  console.warn("⚠️ [DEPRECATED] getAllHotels usa datos estáticos purgados. Use supabase.from('hotels').select('*')");
+  console.warn("⚠️ [DEPRECATED] getAllHotels usa datos estáticos purgados. Use supabase.from('hotels_master').select('*')");
   return [];
 };
 export const getHotelBySlug = async (slug) => {
-  console.warn("⚠️ [DEPRECATED] getHotelBySlug usa datos estáticos purgados. Use supabase.from('hotels').select('*').eq('slug', slug)");
+  console.warn("⚠️ [DEPRECATED] getHotelBySlug usa datos estáticos purgados. Use supabase.from('hotels_master').select('*').eq('slug', slug)");
   return null;
 };
 export const hotelData = [];

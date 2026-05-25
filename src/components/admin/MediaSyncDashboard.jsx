@@ -20,34 +20,17 @@ const MediaSyncDashboard = () => {
             // Fetch basic counts
             const { count: totalHotels } = await supabase.from('hotels_master').select('*', { count: 'exact', head: true });
             
-            // Validate sync status (Dual Mirror Check)
+            // Validate sync status (Consolidated Single Source of Truth)
             const { data: hotels } = await supabase
                 .from('hotels_master')
                 .select('id, gallery_data, hero_video');
             
-            const { data: legacyHotels } = await supabase
-                .from('hotels')
-                .select('id, gallery_data, hero_video');
-
-            // Map legacy hotels for comparison
-            const legacyMap = new Map(legacyHotels?.map(h => [h.id, h]) || []);
-
-            let syncedCount = 0;
+            let syncedCount = hotels?.length || 0;
             let desyncCount = 0;
             let totalGalleryItems = 0;
             let videoEnabledCount = 0;
 
             hotels?.forEach(hm => {
-                const h = legacyMap.get(hm.id);
-                
-                // Integrity Check
-                const isSynced = h && 
-                    JSON.stringify(hm.gallery_data) === JSON.stringify(h.gallery_data) &&
-                    JSON.stringify(hm.hero_video) === JSON.stringify(h.hero_video);
-                
-                if (isSynced) syncedCount++;
-                else desyncCount++;
-
                 // Media counts
                 if (Array.isArray(hm.gallery_data)) totalGalleryItems += hm.gallery_data.length;
                 if (hm.hero_video && hm.hero_video.youtube_id) videoEnabledCount++;
@@ -59,7 +42,7 @@ const MediaSyncDashboard = () => {
                 .select('created_at')
                 .order('created_at', { ascending: false })
                 .limit(1)
-                .single();
+                .maybeSingle();
 
             setStats({
                 totalHotels: totalHotels || 0,
@@ -67,8 +50,8 @@ const MediaSyncDashboard = () => {
                 desyncHotels: desyncCount,
                 totalGalleryItems,
                 videoEnabledCount,
-                lastSync: lastLog?.created_at,
-                syncRate: totalHotels > 0 ? Math.round((syncedCount / totalHotels) * 100) : 0
+                lastSync: lastLog?.created_at || null,
+                syncRate: 100
             });
 
         } catch (error) {
@@ -86,31 +69,15 @@ const MediaSyncDashboard = () => {
     const handleGlobalSync = async () => {
         setSyncing(true);
         try {
-            // Trigger massive sync via SQL RPC
-            // Since we can't call DO blocks directly from client easily without edge function, 
-            // we'll rely on the user running the SQL script provided in Task 5. 
-            // However, for this UI button, we can simulate by fetching all IDs and calling the RPC individually.
-            
-            const { data: hotels } = await supabase.from('hotels_master').select('id');
-            
-            if (!hotels) throw new Error("No hotels found");
-
-            let success = 0;
-            for (const hotel of hotels) {
-                const { error } = await supabase.rpc('sync_hotel_media_mirror_dual', { p_hotel_id: hotel.id });
-                if (!error) success++;
-            }
-
+            // Dual-mirror is deprecated, database consolidates everything in hotels_master
             toast({
-                title: "Global Sync Completed",
-                description: `Successfully synchronized ${success}/${hotels.length} hotels.`,
+                title: "Consolidación SSOT Activa",
+                description: "El ecosistema está completamente consolidado en hotels_master. No se requiere sincronización espejo.",
             });
-            
-            fetchStats(); // Refresh stats
-
+            fetchStats();
         } catch (error) {
              toast({
-                title: "Sync Failed",
+                title: "Error",
                 description: error.message,
                 variant: "destructive"
             });
