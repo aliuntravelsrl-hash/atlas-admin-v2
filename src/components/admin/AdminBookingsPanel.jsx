@@ -1,30 +1,65 @@
 import React, { useState, useEffect } from 'react';
-import { bookingService } from '@/services/bookingService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, FileText, Calendar, Lock, CheckCircle, Clock } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/use-toast";
+import { 
+  Search, FileText, Calendar, Lock, CheckCircle, Clock, 
+  User, Phone, Mail, Building, MapPin, DollarSign, ExternalLink, ShieldAlert, AlertTriangle, Download, MessageCircle 
+} from 'lucide-react';
 import { format } from 'date-fns';
-import { generateQuotePDF } from '@/lib/QuotationPDFGenerator'; // Fixed import path
-import { supabase } from '@/lib/customSupabaseClient'; // For Realtime
+import { es } from 'date-fns/locale';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const AdminBookingsPanel = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('all');
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState('details');
+  const [crmLead, setCrmLead] = useState(null);
+  const [crmLoading, setCrmLoading] = useState(false);
+
+  // Form states for Selected Booking
+  const [hotelConfirmationNo, setHotelConfirmationNo] = useState('');
+  const [statusVal, setStatusVal] = useState('');
+  const [paymentStatusVal, setPaymentStatusVal] = useState('');
+  
+  // Action states
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [confirmingDeposit, setConfirmingDeposit] = useState(false);
+  const [releasingVoucher, setReleasingVoucher] = useState(false);
+  const [sendingRaceCondition, setSendingRaceCondition] = useState(false);
+
+  // Quick Filter States
+  const [filterRef, setFilterRef] = useState('');
+  const [filterHotelConf, setFilterHotelConf] = useState('');
+  const [filterGuestName, setFilterGuestName] = useState('');
+  const [filterHotelName, setFilterHotelName] = useState('');
+  const [filterDestination, setFilterDestination] = useState('');
+  const [filterCheckIn, setFilterCheckIn] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPayment, setFilterPayment] = useState('all');
+  const [filterCoreType, setFilterCoreType] = useState('all');
+
+  const { toast } = useToast();
 
   // --- Initial Load & Realtime Subscription ---
   useEffect(() => {
     loadBookings();
 
-    // Realtime Subscription
     const subscription = supabase
-      .channel('public:bookings')
+      .channel('admin_bookings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
-        console.log('Realtime update:', payload);
-        loadBookings(); // Reload to get fresh data including relations
+        console.log('Realtime update received:', payload);
+        loadBookings(); // Reload to fetch relations correctly
       })
       .subscribe();
 
@@ -33,133 +68,1145 @@ const AdminBookingsPanel = () => {
     };
   }, []);
 
+  // Sync selected booking details if bookings list updates in background
+  useEffect(() => {
+    if (selectedBooking) {
+      const updated = bookings.find(b => b.id === selectedBooking.id);
+      if (updated) {
+        setSelectedBooking(updated);
+        // Sync inputs if they are not dirty or if status changed in DB
+        setHotelConfirmationNo(updated.hotel_confirmation_no || '');
+        setStatusVal(updated.status || '');
+        setPaymentStatusVal(updated.payment_status || '');
+      }
+    }
+  }, [bookings]);
+
   const loadBookings = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('bookings')
-        .select('*, hotels(name), room_types(name)')
+        .select(`
+          *,
+          hotels_master (name, zone, about_image)
+        `)
         .order('created_at', { ascending: false });
         
       if (error) throw error;
       setBookings(data || []);
     } catch (error) {
       console.error("Error fetching bookings:", error);
+      toast({
+        title: "Error de Sincronización",
+        description: "No se pudieron obtener las reservas de Supabase.",
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredBookings = bookings.filter(b => {
-    const matchesSearch = 
-        b.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        b.voucher_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.hotels?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
+  // --- CRM Lead Link Lookup ---
+  const fetchCrmLead = async (guestName) => {
+    if (!guestName) return;
+    setCrmLoading(true);
+    setCrmLead(null);
+    try {
+      const { data, error } = await supabase
+        .from('crm_leads')
+        .select('*')
+        .ilike('full_name', `%${guestName}%`)
+        .eq('source', 'web_booking')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    return matchesSearch && matchesStatus;
-  });
-
-  const handleDownloadQuote = (booking) => {
-    const doc = generateQuotePDF({
-        hotelName: booking.hotels?.name,
-        guestName: booking.guest_name,
-        checkIn: booking.check_in,
-        checkOut: booking.check_out,
-        adults: booking.adults,
-        children: booking.children,
-        roomTypeName: booking.room_types?.name || 'Habitación',
-        totalPrice: booking.total_price,
-        id: booking.id,
-        created_at: booking.created_at
-    });
-    doc.save(`cotizacion-${booking.guest_name.replace(/\s+/g, '_')}.pdf`);
+      if (error) throw error;
+      setCrmLead(data);
+    } catch (error) {
+      console.error("Error fetching CRM Lead:", error);
+    } finally {
+      setCrmLoading(false);
+    }
   };
 
-  const getStatusBadge = (status) => {
-      switch(status) {
-          case 'confirmed': 
-          case 'paid':
-              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-green-100 text-green-800 border border-green-200"><CheckCircle className="w-3 h-3 mr-1"/> Confirmada</span>;
-          case 'waiting_confirmation':
-              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-200"><Clock className="w-3 h-3 mr-1"/> Modo Espera</span>;
-          case 'pending_validation': 
-              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200"><Lock className="w-3 h-3 mr-1"/> Pendiente Pago</span>;
-          case 'cancelled': 
-              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-red-100 text-red-800 border border-red-200">Cancelada</span>;
-          default: 
-              return <span className="flex items-center text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-800 border border-gray-200">{status}</span>;
+  const handleOpenDetail = async (booking, defaultTab = 'details') => {
+    setSelectedBooking(booking);
+    setHotelConfirmationNo(booking.hotel_confirmation_no || '');
+    setStatusVal(booking.status || '');
+    setPaymentStatusVal(booking.payment_status || '');
+    setDetailTab(defaultTab);
+    setIsDetailOpen(true);
+    fetchCrmLead(booking.lead_guest_name);
+
+    if (booking.room_id && !booking.room_name) {
+      try {
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('name')
+          .eq('id', booking.room_id)
+          .maybeSingle();
+
+        if (!roomError && roomData) {
+          setSelectedBooking(prev => prev ? { ...prev, room_name: roomData.name } : null);
+        }
+      } catch (err) {
+        console.error("Error fetching room name:", err);
       }
+    }
+  };
+
+  // --- WhatsApp Sharing Helper ---
+  const handleShareWhatsApp = (booking) => {
+    if (!booking) return;
+    const phone = booking.lead_phone ? booking.lead_phone.replace(/\D/g, '') : '';
+    const name = booking.lead_guest_name || 'Cliente';
+    const hotel = booking.hotels_master?.name || booking.room_name || 'Hotel Seleccionado';
+    const pdfUrl = booking.voucher_pdf_url || '';
+    
+    const message = `¡Hola *${name}*! 👋 Te saludamos de Aliun Travel. Aquí tienes el enlace para ver y descargar tu voucher oficial de confirmación para tu estadía en *${hotel}*:\n\n🔗 ${pdfUrl}\n\n¡Que tengas un excelente viaje! 🌴`;
+    
+    let targetPhone = phone;
+    if (phone && phone.length === 10) {
+      targetPhone = '1' + phone;
+    }
+
+    const waUrl = targetPhone 
+      ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/18299648443?text=${encodeURIComponent(message)}`;
+      
+    window.open(waUrl, '_blank');
+  };
+
+  // --- Actions ---
+
+  // Save manual status change & localizer
+  const handleSaveSettings = async () => {
+    if (!selectedBooking) return;
+    setSavingSettings(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          hotel_confirmation_no: hotelConfirmationNo || null,
+          status: statusVal,
+          payment_status: paymentStatusVal,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Reserva Actualizada",
+        description: "Los cambios fueron guardados exitosamente en la base de datos.",
+      });
+      loadBookings();
+    } catch (error) {
+      console.error("Error saving booking details:", error);
+      toast({
+        title: "Error al Guardar",
+        description: "No se pudieron actualizar los datos de la reserva.",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  // Confirm Deposit validation
+  const handleConfirmDeposit = async () => {
+    if (!selectedBooking) return;
+    setConfirmingDeposit(true);
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          payment_status: 'deposit_received',
+          validated_by: 'director',
+          validated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Depósito Confirmado",
+        description: "El pago inicial del 30% fue marcado como recibido por el Director.",
+      });
+      loadBookings();
+    } catch (error) {
+      console.error("Error confirming deposit:", error);
+      toast({
+        title: "Error de Validación",
+        description: "No se pudo registrar la validación del depósito.",
+        variant: "destructive"
+      });
+    } finally {
+      setConfirmingDeposit(false);
+    }
+  };
+
+  // Send Solicitud Race Condition (Supplier Request)
+  const handleSendRaceCondition = async (booking) => {
+    if (!booking) return;
+    setSendingRaceCondition(true);
+    try {
+      const response = await fetch('https://n8n-n8n.xaruuo.easypanel.host/webhook/provider-solicitud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_reference: booking.booking_reference,
+          hotel_name: booking.hotels_master?.name || booking.room_name || 'Hotel Aliun',
+          check_in: booking.check_in,
+          check_out: booking.check_out,
+          lead_name: booking.lead_guest_name
+        })
+      });
+
+      if (!response.ok) throw new Error("Webhook error");
+
+      toast({
+        title: "Solicitud Enviada",
+        description: "Se disparó la solicitud de prevención de Cupo (Race Condition) en n8n.",
+      });
+    } catch (error) {
+      console.error("Error sending provider request:", error);
+      toast({
+        title: "Error de Comunicación",
+        description: "No se pudo disparar el webhook de solicitud al proveedor.",
+        variant: "destructive"
+      });
+    } finally {
+      setSendingRaceCondition(false);
+    }
+  };
+
+  // Release and send Voucher via Gotenberg
+  const handleReleaseVoucher = async () => {
+    if (!selectedBooking) return;
+    
+    if (!hotelConfirmationNo || hotelConfirmationNo.trim() === "") {
+      toast({
+        title: "Localizador Faltante",
+        description: "Debes ingresar el número de confirmación del hotel para emitir el voucher.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setReleasingVoucher(true);
+
+    // Idempotency: Check if URL already exists locally
+    if (selectedBooking.voucher_pdf_url) {
+      toast({
+        title: "Voucher Ya Emitido",
+        description: "Esta reserva ya cuenta con un voucher. Usando el enlace existente.",
+      });
+      setReleasingVoucher(false);
+      return;
+    }
+
+    // Timeout Promise to abort UI lock at 30 seconds
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const response = await fetch('https://n8n-n8n.xaruuo.easypanel.host/webhook/aliun-deposito-aprobado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          booking_reference: selectedBooking.booking_reference,
+          hotel_confirmation_no: hotelConfirmationNo,
+          monto_deposito: selectedBooking.total_amount ? Number(selectedBooking.total_amount) * 0.3 : 0,
+          email_cliente: selectedBooking.lead_email || "reservas@aliuntravelsrl.com",
+          hotel_name: selectedBooking.hotels_master?.name || "Hotel Seleccionado",
+          check_in: selectedBooking.check_in,
+          check_out: selectedBooking.check_out,
+          lead_name: selectedBooking.lead_guest_name
+        })
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Error en servidor: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const pdfUrl = result.pdf_url || result.url || result.pdf;
+
+      if (!pdfUrl) {
+        throw new Error("No se recibió la URL del PDF del voucher.");
+      }
+
+      // Update Supabase with voucher issued state
+      const { error: dbError } = await supabase
+        .from('bookings')
+        .update({
+          fulfillment_status: 'voucher_issued',
+          voucher_pdf_url: pdfUrl,
+          status: 'confirmed',
+          payment_status: 'paid',
+          hotel_confirmation_no: hotelConfirmationNo,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedBooking.id);
+
+      if (dbError) throw dbError;
+
+      toast({
+        title: "Voucher Liberado ✅",
+        description: "El voucher PDF fue generado con Gotenberg y enviado por correo.",
+      });
+      loadBookings();
+
+    } catch (error) {
+      console.error("Error releasing voucher:", error);
+      const isTimeout = error.name === 'AbortError';
+      toast({
+        title: isTimeout ? "Timeout de Generación" : "Error al Liberar",
+        description: isTimeout 
+          ? "El renderizado de Gotenberg demoró más de 30s. Intenta nuevamente." 
+          : error.message || "Ocurrió un error al disparar el webhook de vouchers.",
+        variant: "destructive"
+      });
+    } finally {
+      setReleasingVoucher(false);
+    }
+  };
+
+  // Cancel booking action
+  const handleCancelBooking = async (booking) => {
+    if (!booking) return;
+    if (!window.confirm(`¿Estás seguro de que deseas cancelar la reserva ${booking.booking_reference}?`)) return;
+    
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', booking.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Reserva Cancelada",
+        description: `La reserva ${booking.booking_reference} fue marcada como Cancelada.`,
+      });
+      loadBookings();
+    } catch (error) {
+      console.error("Error cancelling booking:", error);
+      toast({
+        title: "Error al Cancelar",
+        description: "No se pudo cancelar la reserva en Supabase.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // --- Filtering ---
+  const filteredBookings = bookings.filter(b => {
+    // Search Term
+    const matchesSearch = searchTerm === '' ? true : (
+      b.lead_guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      b.booking_reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      b.hotels_master?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // Advanced Filters
+    const matchesRef = filterRef === '' ? true : b.booking_reference?.toLowerCase().includes(filterRef.toLowerCase());
+    const matchesHotelConf = filterHotelConf === '' ? true : b.hotel_confirmation_no?.toLowerCase().includes(filterHotelConf.toLowerCase());
+    const matchesGuestName = filterGuestName === '' ? true : b.lead_guest_name?.toLowerCase().includes(filterGuestName.toLowerCase());
+    const matchesHotelName = filterHotelName === '' ? true : b.hotels_master?.name?.toLowerCase().includes(filterHotelName.toLowerCase());
+    const matchesDestination = filterDestination === '' ? true : b.hotels_master?.zone?.toLowerCase().includes(filterDestination.toLowerCase());
+    const matchesCheckIn = filterCheckIn === '' ? true : b.check_in === filterCheckIn;
+    
+    const matchesStatus = filterStatus === 'all' ? true : b.status === filterStatus;
+    const matchesPayment = filterPayment === 'all' ? true : b.payment_status === filterPayment;
+
+    // Core Type
+    let bCoreType = 'Manual';
+    if (b.offer_id) bCoreType = 'Core 2';
+    else if (b.room_id) bCoreType = 'Core 1';
+    const matchesCoreType = filterCoreType === 'all' ? true : bCoreType === filterCoreType;
+
+    // Tabs List Filter
+    let matchesTab = true;
+    if (activeTab === 'pending_validation') {
+      matchesTab = b.status === 'pending_validation';
+    } else if (activeTab === 'waiting_confirmation') {
+      matchesTab = b.status === 'waiting_confirmation';
+    } else if (activeTab === 'voucher_issued') {
+      matchesTab = b.fulfillment_status === 'voucher_issued';
+    } else if (activeTab === 'completed') {
+      matchesTab = b.fulfillment_status === 'completed';
+    } else if (activeTab === 'cancelled') {
+      matchesTab = b.status === 'cancelled';
+    }
+
+    return matchesSearch && matchesRef && matchesHotelConf && matchesGuestName && 
+           matchesHotelName && matchesDestination && matchesCheckIn && 
+           matchesStatus && matchesPayment && matchesCoreType && matchesTab;
+  });
+
+  const handleClearFilters = () => {
+    setFilterRef('');
+    setFilterHotelConf('');
+    setFilterGuestName('');
+    setFilterHotelName('');
+    setFilterDestination('');
+    setFilterCheckIn('');
+    setFilterStatus('all');
+    setFilterPayment('all');
+    setFilterCoreType('all');
+    setSearchTerm('');
+  };
+
+  // --- Core Type Helper (Correction 2) ---
+  const getCoreType = (booking) => {
+    if (booking.offer_id) return 'Core 2';      // bloque proveedor local
+    if (booking.room_id)  return 'Core 1';      // tarifa MANUAL directa
+    return 'Manual';                             // ingreso directo admin
+  };
+
+  const getCoreTypeLabel = (type) => {
+    switch (type) {
+      case 'Core 2': return 'Proveedor Local';
+      case 'Core 1': return 'Tarifa Directa';
+      case 'Manual':
+      default:
+        return 'Admin';
+    }
+  };
+
+  // --- Trip Name Helper (Correction 4) ---
+  const getTripName = (booking) => {
+    try {
+      if (!booking.lead_guest_name) return 'N/A';
+      
+      const lastName = booking.lead_guest_name
+        .trim()
+        .split(' ')
+        .slice(-1)[0]
+        .toUpperCase();
+        
+      const checkInDate = booking.check_in ? new Date(booking.check_in + 'T00:00:00') : new Date();
+      const dateStr = format(checkInDate, 'ddMMM');
+      
+      const hotelName = booking.hotels_master?.name || booking.room_name || 'Hotel';
+      const hotelWord = hotelName.trim().split(' ')[0];
+      
+      return `${lastName}_${dateStr}_${hotelWord}`;
+    } catch (e) {
+      console.error(e);
+      return 'N/A';
+    }
+  };
+
+  const getCancellationDate = (checkInStr) => {
+    try {
+      if (!checkInStr) return 'N/A';
+      const checkInDate = new Date(checkInStr + 'T00:00:00');
+      checkInDate.setDate(checkInDate.getDate() - 15);
+      return format(checkInDate, 'dd-MMM-yyyy', { locale: es });
+    } catch (e) {
+      console.error(e);
+      return 'N/A';
+    }
+  };
+
+  const formatDateReadable = (dateStr) => {
+    try {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      return format(date, 'EEE dd-MMM-yyyy', { locale: es });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // --- Badges & Styles Helper ---
+  const getStatusBadge = (status) => {
+    switch(status) {
+      case 'confirmed': 
+        return <Badge className="bg-green-600 text-white hover:bg-green-700">Confirmada</Badge>;
+      case 'waiting_confirmation':
+        return <Badge className="bg-orange-500 text-white hover:bg-orange-600">En Espera</Badge>;
+      case 'pending_validation': 
+        return <Badge className="bg-yellow-500 text-black hover:bg-yellow-600">Pendiente Pago</Badge>;
+      case 'cancelled': 
+        return <Badge className="bg-red-600 text-white hover:bg-red-700">Cancelada</Badge>;
+      default: 
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const getFulfillmentBadge = (fStatus) => {
+    switch(fStatus) {
+      case 'voucher_issued':
+        return <Badge variant="outline" className="border-green-600 text-green-600 bg-green-50">Voucher Emitido</Badge>;
+      case 'completed':
+        return <Badge variant="outline" className="border-blue-600 text-blue-600 bg-blue-50">Completada</Badge>;
+      case 'pending':
+      default:
+        return <Badge variant="outline" className="border-gray-400 text-gray-500">Pendiente Voucher</Badge>;
+    }
+  };
+
+  const getPaymentStatusBadge = (pStatus) => {
+    switch(pStatus) {
+      case 'paid':
+        return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">Pagado ✅</Badge>;
+      case 'deposit_received':
+        return <Badge className="bg-sky-100 text-sky-800 border-sky-200">Depósito Recibido 🟢</Badge>;
+      case 'unpaid':
+      default:
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Por Pagar ⚠️</Badge>;
+    }
   };
 
   return (
-    <div className="space-y-6">
-       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <h2 className="text-2xl font-bold">Monitor de Ventas (Tiempo Real)</h2>
-          
-          <div className="flex gap-2 w-full md:w-auto">
-              <div className="relative w-full md:w-64">
-                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                 <Input 
-                    placeholder="Buscar..." 
-                    className="pl-8"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="paid">Confirmadas / Pagadas</SelectItem>
-                    <SelectItem value="waiting_confirmation">Modo Espera</SelectItem>
-                    <SelectItem value="pending_validation">Pendientes Pago</SelectItem>
-                    <SelectItem value="cancelled">Cancelados</SelectItem>
-                </SelectContent>
-              </Select>
-          </div>
-       </div>
+    <div className="container mx-auto py-6 px-4 space-y-6 max-w-7xl">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b pb-5">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Confirmaciones de Venta</h1>
+          <p className="text-slate-500 mt-1">Monitorea ingresos y aprueba la emisión de vouchers de hotel en tiempo real (Estilo OTA).</p>
+        </div>
+        
+        <div className="relative w-full lg:w-72">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <Input 
+            placeholder="Buscar por referencia, cliente..." 
+            className="pl-9 h-11 border-slate-200 bg-white shadow-sm"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
 
-       {loading ? (
-          <div className="text-center py-12 text-gray-400 animate-pulse">Sincronizando con Bóveda...</div>
-       ) : (
-          <div className="grid gap-4">
-             {filteredBookings.map(booking => (
-                <Card key={booking.id} className="hover:shadow-md transition-shadow border-l-4 border-l-transparent hover:border-l-blue-500">
-                   <CardContent className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      <div className="flex-1">
-                         <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-lg">{booking.hotels?.name || 'Hotel'}</span>
-                            {getStatusBadge(booking.status)}
-                         </div>
-                         <div className="text-sm text-gray-600 flex flex-wrap gap-x-4 gap-y-1 items-center">
-                            <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/> {format(new Date(booking.check_in), 'dd/MM')} - {format(new Date(booking.check_out), 'dd/MM/yyyy')}</span>
-                            <span className="hidden md:inline text-gray-300">|</span>
-                            <span>{booking.guest_name}</span>
-                            <span className="hidden md:inline text-gray-300">|</span>
-                            <span className="font-mono text-xs text-gray-400">{booking.id.slice(0,8)}</span>
-                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
-                         <div className="text-right">
-                            <div className="font-bold text-xl text-blue-900">${Number(booking.total_price).toFixed(2)}</div>
-                            <div className="text-xs text-gray-500">
-                                {booking.payment_status === 'completed' || booking.status === 'paid' ? 'Pagado ✅' : 'Por Pagar ⚠️'}
+      <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="bg-slate-100 p-1 rounded-xl w-full flex overflow-x-auto justify-start border border-slate-200">
+          <TabsTrigger value="all" className="rounded-lg py-2">Todos</TabsTrigger>
+          <TabsTrigger value="pending_validation" className="rounded-lg py-2">Pendientes de Pago</TabsTrigger>
+          <TabsTrigger value="waiting_confirmation" className="rounded-lg py-2">En Espera</TabsTrigger>
+          <TabsTrigger value="voucher_issued" className="rounded-lg py-2">Voucher Emitido</TabsTrigger>
+          <TabsTrigger value="completed" className="rounded-lg py-2">Completadas</TabsTrigger>
+          <TabsTrigger value="cancelled" className="rounded-lg py-2">Canceladas</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={activeTab} className="mt-6">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 space-y-3">
+              <div className="w-8 h-8 border-4 border-[#C19A6B] border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-slate-500 font-medium">Sincronizando con Bóveda de Datos...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+              {/* LISTA DE TARJETAS (Izquierda) */}
+              <div className="lg:col-span-3 space-y-4">
+                {filteredBookings.length === 0 ? (
+                  <div className="text-center py-20 bg-slate-50 border border-dashed rounded-3xl space-y-2">
+                    <ShieldAlert className="w-12 h-12 text-slate-300 mx-auto" />
+                    <h3 className="text-lg font-semibold text-slate-700">No se encontraron reservas</h3>
+                    <p className="text-slate-500 max-w-sm mx-auto">No hay registros de venta que coincidan con la búsqueda o el filtro actual.</p>
+                  </div>
+                ) : (
+                  filteredBookings.map(booking => {
+                    const isPending = booking.status === 'pending_validation';
+                    const isConfirmed = booking.status === 'confirmed';
+                    const isCancelled = booking.status === 'cancelled';
+                    
+                    const tripName = getTripName(booking);
+                    const cancellationDate = getCancellationDate(booking.check_in);
+                    const coreType = getCoreType(booking);
+                    const coreLabel = getCoreTypeLabel(coreType);
+
+                    return (
+                      <Card 
+                        key={booking.id} 
+                        onClick={() => handleOpenDetail(booking, 'details')}
+                        className={`overflow-hidden hover:shadow-lg transition-all duration-200 border bg-white ${
+                          isPending ? 'border-l-4 border-l-yellow-500' : isConfirmed ? 'border-l-4 border-l-green-600' : isCancelled ? 'border-l-4 border-l-red-600' : 'border-l-4 border-l-slate-300'
+                        }`}
+                      >
+                        {/* CONTENIDO DE TARJETA ESTILO TBO */}
+                        <div className="flex flex-col lg:flex-row gap-6 p-6">
+                          {/* COLUMNA 1 — Agencia y Hotel */}
+                          <div className="flex-1 space-y-4 text-left">
+                            <div>
+                              <span className="text-[#0A3A6B] font-bold text-xs hover:underline block uppercase tracking-wider">
+                                Aliun Travel SRL. (Mesa de Control)
+                              </span>
+                              <h3 className="font-extrabold text-base text-[#0A3A6B] hover:underline cursor-pointer mt-1">
+                                {booking.hotels_master?.name || booking.room_name || 'Hotel en Caribe'}
+                              </h3>
+                              <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                📍 {booking.hotels_master?.zone || 'Caribe'}
+                              </p>
                             </div>
-                         </div>
-                         <Button variant="ghost" size="sm" onClick={() => handleDownloadQuote(booking)}>
-                             <FileText className="w-4 h-4 text-gray-500 hover:text-blue-600"/>
-                         </Button>
+                            
+                            <div className="text-xs text-slate-600 font-bold">
+                              Booked: {formatDateReadable(booking.created_at)}
+                            </div>
+                          </div>
+
+                          {/* COLUMNA 2 — Estado y Estadía */}
+                          <div className="flex-1 space-y-3 border-t lg:border-t-0 lg:border-l border-slate-100 pt-4 lg:pt-0 lg:pl-6 text-left">
+                            <div className="text-xs font-semibold text-slate-700">
+                              Hotel Booking: {getStatusBadge(booking.status)}
+                            </div>
+                            
+                            {booking.check_in && !isCancelled && (
+                              <div className="text-[11px] font-bold text-red-600">
+                                Last Cancellation Date: {cancellationDate}
+                              </div>
+                            )}
+
+                            <div className="text-xs text-slate-600 space-y-1 font-medium pt-2">
+                              <div><strong>Check In:</strong> {booking.check_in}</div>
+                              <div><strong>Check Out:</strong> {booking.check_out}</div>
+                              <div className="text-slate-500 font-semibold">{booking.nights} noches</div>
+                            </div>
+                          </div>
+
+                          {/* COLUMNA 3 — Confirmaciones e Importe */}
+                          <div className="w-full lg:w-96 bg-slate-50 border border-slate-100 p-4 rounded-xl text-xs space-y-2 text-left">
+                            <div className="flex justify-between items-center pb-1 border-b border-slate-200">
+                              <span className="font-bold text-slate-500">Hotel Conf No:</span>
+                              <span className={`font-mono font-bold px-1.5 py-0.5 rounded text-[11px] ${
+                                booking.hotel_confirmation_no ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {booking.hotel_confirmation_no || "To Be Updated ⚠️"}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between items-center">
+                              <span className="font-semibold text-slate-500">TBOH Conf No:</span>
+                              <span className="font-mono font-bold text-slate-800">{booking.booking_reference}</span>
+                            </div>
+
+                            <div className="flex justify-between items-center pt-1">
+                              <span className="font-bold text-slate-500 text-sm">IMPORTE:</span>
+                              <span className="font-extrabold text-xl text-[#C19A6B]">
+                                ${Number(booking.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {booking.currency || 'USD'}
+                              </span>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-200 space-y-1 text-slate-600 font-medium">
+                              <div><strong>Trip Id:</strong> {booking.id ? booking.id.substring(0, 5).toUpperCase() : 'N/A'}</div>
+                              <div><strong>Trip Name:</strong> {tripName}</div>
+                              <div><strong>Lead Guest:</strong> {booking.lead_guest_name}</div>
+                              <div><strong>Nationality:</strong> {booking.nationality || 'Dominican Republic'}</div>
+                              <div><strong>No. Of Guests:</strong> {Number(booking.adults || 2) + Number(booking.children || 0)}</div>
+                              <div><strong>Room 1:</strong> {booking.adults} Adult(s) {booking.children} Children</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ACCIONES INFERIORES */}
+                        <div className="bg-slate-50/50 px-6 py-3 border-t border-slate-100 flex flex-wrap justify-between items-center gap-3">
+                          {/* Izquierda: Raise Request & Core Type */}
+                          <div className="flex items-center gap-3">
+                            <Button
+                              size="sm"
+                              className="bg-[#0A3A6B] hover:bg-[#082D54] text-white font-bold text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSendRaceCondition(booking);
+                              }}
+                              disabled={sendingRaceCondition || isCancelled}
+                            >
+                              {sendingRaceCondition ? "Enviando..." : "Raise a Request 🔔"}
+                            </Button>
+                            
+                            <Badge className={`font-semibold text-xs ${
+                              coreType === 'Core 2' ? 'bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-200' : 
+                              coreType === 'Core 1' ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200' : 
+                              'bg-slate-100 text-slate-800 hover:bg-slate-200 border-slate-200'
+                            }`}>
+                              {coreLabel}
+                            </Badge>
+                          </div>
+
+                          {/* Derecha: Cancel, Open, PayCart, CRM */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelBooking(booking);
+                              }}
+                              disabled={isCancelled}
+                            >
+                              Cancel Booking
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDetail(booking, 'details');
+                              }}
+                            >
+                              Open | 📄
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              className="bg-[#0A3A6B] hover:bg-[#082D54] text-white font-bold text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDetail(booking, 'payment');
+                              }}
+                            >
+                              Add to PayCart 🛒
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(`/admin/crm/leads?name=${encodeURIComponent(booking.lead_guest_name)}`, '_blank');
+                              }}
+                            >
+                              Ver CRM
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* FILTROS LATERALES (Derecha) */}
+              <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden sticky top-24 text-left">
+                <div className="bg-[#0A3A6B] text-white px-4 py-3 font-bold text-sm flex justify-between items-center">
+                  <span>— Quick Filter</span>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-white hover:text-white/80 hover:bg-[#082D54] h-7 text-xs px-2"
+                    onClick={handleClearFilters}
+                  >
+                    Limpiar
+                  </Button>
+                </div>
+                
+                <div className="p-4 space-y-4 text-xs">
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">TBOH Conf No</Label>
+                    <Input 
+                      placeholder="Ej: ALN-1B3ZCL" 
+                      value={filterRef} 
+                      onChange={e => setFilterRef(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Hotel Conf No</Label>
+                    <Input 
+                      placeholder="Localizador Hotel" 
+                      value={filterHotelConf} 
+                      onChange={e => setFilterHotelConf(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Destination (City/Country)</Label>
+                    <Input 
+                      placeholder="Destino" 
+                      value={filterDestination} 
+                      onChange={e => setFilterDestination(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Guest Name</Label>
+                    <Input 
+                      placeholder="Nombre del Huésped" 
+                      value={filterGuestName} 
+                      onChange={e => setFilterGuestName(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Hotel Name</Label>
+                    <Input 
+                      placeholder="Nombre del Hotel" 
+                      value={filterHotelName} 
+                      onChange={e => setFilterHotelName(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Check-in Date</Label>
+                    <Input 
+                      type="date"
+                      value={filterCheckIn} 
+                      onChange={e => setFilterCheckIn(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Status</Label>
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="pending_validation">Pendiente Pago</SelectItem>
+                        <SelectItem value="waiting_confirmation">En Espera</SelectItem>
+                        <SelectItem value="confirmed">Confirmada</SelectItem>
+                        <SelectItem value="cancelled">Cancelada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Payment Status</Label>
+                    <Select value={filterPayment} onValueChange={setFilterPayment}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="unpaid">Por Pagar ⚠️</SelectItem>
+                        <SelectItem value="deposit_received">Depósito Recibido 🟢</SelectItem>
+                        <SelectItem value="paid">Pagado ✅</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Core Type</Label>
+                    <Select value={filterCoreType} onValueChange={setFilterCoreType}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="Core 2">Proveedor Local (Core 2)</SelectItem>
+                        <SelectItem value="Core 1">Tarifa Directa (Core 1)</SelectItem>
+                        <SelectItem value="Manual">Admin (Manual)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* --- Details Modal Dialog --- */}
+      {selectedBooking && (
+        <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+          <DialogContent className="max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border text-left">
+            <DialogHeader className="border-b pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-2xl font-bold font-playfair text-slate-800">
+                    Detalle de Reserva
+                  </DialogTitle>
+                  <p className="text-xs font-mono font-bold text-[#C19A6B] mt-0.5">
+                    REF: #{selectedBooking.booking_reference}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  {getStatusBadge(selectedBooking.status)}
+                  {getFulfillmentBadge(selectedBooking.fulfillment_status)}
+                </div>
+              </div>
+            </DialogHeader>
+
+            <Tabs value={detailTab} onValueChange={setDetailTab} className="w-full mt-4">
+              <TabsList className="grid grid-cols-4 bg-slate-100 p-1 rounded-xl">
+                <TabsTrigger value="details" className="rounded-lg text-xs py-1.5">Detalle</TabsTrigger>
+                <TabsTrigger value="customer" className="rounded-lg text-xs py-1.5">Cliente</TabsTrigger>
+                <TabsTrigger value="provider" className="rounded-lg text-xs py-1.5">Proveedor</TabsTrigger>
+                <TabsTrigger value="payment" className="rounded-lg text-xs py-1.5 font-bold text-[#C19A6B]">Pagos</TabsTrigger>
+              </TabsList>
+
+              {/* TAB: DETAILS */}
+              <TabsContent value="details" className="space-y-4 pt-4">
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border text-sm text-slate-600">
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Hotel</span>
+                    <span className="font-bold text-slate-800 text-base block">
+                      {selectedBooking.hotels_master?.name || 'Hotel en Caribe'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Habitación</span>
+                    <span className="font-bold text-slate-800 block">
+                      {selectedBooking.room_name || 'Habitación no especificada (N/A)'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Fechas de Estadía</span>
+                    <span className="font-semibold text-slate-700 block">
+                      {selectedBooking.check_in} al {selectedBooking.check_out} ({selectedBooking.nights || 0} Noches)
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Ocupación</span>
+                    <span className="font-semibold text-slate-700 block">
+                      {selectedBooking.occupancy_desc || `${selectedBooking.adults} adultos`}
+                    </span>
+                  </div>
+                  <div className="col-span-2 border-t pt-2 space-y-1">
+                    <span className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Monto Total de Venta</span>
+                    <span className="font-extrabold text-[#C19A6B] text-xl block">
+                      ${Number(selectedBooking.total_amount || 0).toFixed(2)} {selectedBooking.currency || 'USD'}
+                    </span>
+                  </div>
+                </div>
+
+                {selectedBooking.voucher_pdf_url && (
+                  <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-bold text-emerald-800 text-sm">Voucher PDF Emitido</h4>
+                      <p className="text-xs text-emerald-600 mt-0.5">El documento está cargado públicamente en el storage.</p>
+                    </div>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <Button 
+                        variant="outline" 
+                        className="border-emerald-600 text-emerald-600 hover:bg-emerald-100 font-bold gap-2 text-xs flex-1 sm:flex-initial"
+                        onClick={() => window.open(selectedBooking.voucher_pdf_url, '_blank')}
+                      >
+                        <Download className="w-4 h-4" /> Descargar Voucher
+                      </Button>
+                      <Button 
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold gap-2 text-xs flex-1 sm:flex-initial"
+                        onClick={() => handleShareWhatsApp(selectedBooking)}
+                      >
+                        <MessageCircle className="w-4 h-4" /> Enviar por WhatsApp
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* TAB: CUSTOMER */}
+              <TabsContent value="customer" className="space-y-4 pt-4">
+                <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border text-sm text-slate-700">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-slate-400" />
+                    <strong>Titular:</strong> {selectedBooking.lead_guest_name}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-slate-400" />
+                    <strong>Email:</strong> {selectedBooking.lead_email || 'N/A'}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-slate-400" />
+                    <strong>Teléfono:</strong> {selectedBooking.lead_phone || 'N/A'}
+                  </div>
+                  {selectedBooking.nationality && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-slate-400" />
+                      <strong>Nacionalidad:</strong> {selectedBooking.nationality}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border border-slate-200 p-4 rounded-2xl bg-white space-y-3">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                    <Building className="w-4 h-4 text-[#C19A6B]" /> Vinculación al CRM de Supabase
+                  </h4>
+                  {crmLoading ? (
+                    <p className="text-xs text-slate-400 animate-pulse">Buscando lead en crm_leads...</p>
+                  ) : crmLead ? (
+                    <div className="flex items-center justify-between text-xs">
+                      <div>
+                        <p className="font-semibold text-slate-700">Lead encontrado: {crmLead.full_name}</p>
+                        <p className="text-slate-500">Etapa actual: <span className="font-bold uppercase text-[#C19A6B]">{crmLead.stage}</span></p>
                       </div>
-                   </CardContent>
-                </Card>
-             ))}
-          </div>
-       )}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="text-xs gap-1"
+                        onClick={() => window.open(`/admin/crm/leads?name=${encodeURIComponent(selectedBooking.lead_guest_name)}`, '_blank')}
+                      >
+                        Ver en CRM <ExternalLink className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      No se encontró un lead correspondiente en crm_leads para el cliente "{selectedBooking.lead_guest_name}".
+                    </p>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* TAB: PROVIDER */}
+              <TabsContent value="provider" className="space-y-4 pt-4">
+                {/* Check if voucher already issued */}
+                {['voucher_issued', 'completed'].includes(selectedBooking.fulfillment_status) ? (
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-2.5 text-xs text-amber-800 mb-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Datos de Proveedor Bloqueados</p>
+                      <p className="mt-0.5">El voucher ya fue emitido y enviado al cliente. Los campos de confirmación del proveedor son solo de lectura.</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border">
+                  <div className="space-y-2">
+                    <Label htmlFor="hotel_locator" className="font-bold text-xs text-slate-600 uppercase">
+                      Localizador de Confirmación de Hotel
+                    </Label>
+                    <Input 
+                      id="hotel_locator"
+                      placeholder="Ingrese el número o localizador provisto por el hotel..."
+                      className="bg-white border-slate-200 h-10"
+                      value={hotelConfirmationNo}
+                      onChange={(e) => setHotelConfirmationNo(e.target.value)}
+                      disabled={['voucher_issued', 'completed'].includes(selectedBooking.fulfillment_status)}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-3">
+                    <Button 
+                      className="flex-1 text-xs font-semibold py-5" 
+                      onClick={handleSaveSettings}
+                      disabled={savingSettings}
+                    >
+                      {savingSettings ? "Guardando..." : "Guardar Localizador"}
+                    </Button>
+
+                    <Button 
+                      variant="outline" 
+                      className="flex-1 text-xs font-semibold py-5 border-slate-200 hover:bg-slate-100"
+                      onClick={() => handleSendRaceCondition(selectedBooking)}
+                      disabled={sendingRaceCondition || ['voucher_issued', 'completed'].includes(selectedBooking.fulfillment_status)}
+                    >
+                      {sendingRaceCondition ? "Disparando..." : "Enviar Solicitud Race Condition"}
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* TAB: PAYMENTS & RELEASE */}
+              <TabsContent value="payment" className="space-y-4 pt-4">
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border text-sm text-slate-700 mb-2">
+                  <div>
+                    <strong>Estado de Pago:</strong>
+                    <div className="mt-1">{getPaymentStatusBadge(selectedBooking.payment_status)}</div>
+                  </div>
+                  <div>
+                    <strong>Estado de Reserva:</strong>
+                    <div className="mt-1">{getStatusBadge(selectedBooking.status)}</div>
+                  </div>
+                  {selectedBooking.validated_at && (
+                    <div className="col-span-2 border-t pt-2 text-xs text-slate-500">
+                      Depósito validado por <strong>{selectedBooking.validated_by || 'Director'}</strong> el {format(new Date(selectedBooking.validated_at), 'dd/MM/yyyy HH:mm')}.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {/* STEP 1: Validate Deposit */}
+                  {selectedBooking.payment_status === 'unpaid' && (
+                    <div className="border border-dashed border-sky-300 p-4 rounded-2xl bg-sky-50/30 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                      <div>
+                        <h4 className="font-bold text-sky-900 text-sm">Paso 1: Confirmar Depósito</h4>
+                        <p className="text-xs text-sky-700 mt-0.5">El cliente ha enviado su comprobante y requiere aprobación inicial.</p>
+                      </div>
+                      <Button 
+                        className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs h-10 px-4"
+                        onClick={handleConfirmDeposit}
+                        disabled={confirmingDeposit}
+                      >
+                        {confirmingDeposit ? "Confirmando..." : "Confirmar Depósito Recibido"}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* STEP 2: Release Voucher */}
+                  <div className="border border-slate-200 p-5 rounded-2xl bg-white space-y-4">
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-sm">Paso 2: Liberar y Enviar Voucher Oficial</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Esta acción generará el PDF final mediante Gotenberg, lo subirá al storage de Supabase y enviará el voucher por correo al cliente.
+                      </p>
+                    </div>
+
+                    {/* Validation Warnings */}
+                    {!(selectedBooking.payment_status === 'deposit_received' || selectedBooking.payment_status === 'paid') ? (
+                      <div className="bg-amber-50 border border-amber-200 text-xs text-amber-800 p-3 rounded-xl flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>El depósito del 30% o pago total debe ser confirmado antes de liberar el voucher.</span>
+                      </div>
+                    ) : null}
+                    
+                    {!hotelConfirmationNo ? (
+                      <div className="bg-amber-50 border border-amber-200 text-xs text-amber-800 p-3 rounded-xl flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Debes ingresar el localizador de confirmación del hotel en la pestaña "Proveedor".</span>
+                      </div>
+                    ) : null}
+
+                    {selectedBooking.fulfillment_status === 'voucher_issued' && (
+                      <div className="bg-green-50 border border-green-200 text-xs text-green-800 p-3 rounded-xl flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                        <span>El voucher ya ha sido emitido con éxito para esta reserva.</span>
+                      </div>
+                    )}
+
+                    {selectedBooking.fulfillment_status === 'voucher_issued' ? (
+                      <Button 
+                        className="w-full bg-green-600 hover:bg-green-700 text-white font-extrabold text-sm py-6 gap-2"
+                        onClick={() => handleShareWhatsApp(selectedBooking)}
+                      >
+                        <MessageCircle className="w-5 h-5" /> Enviar Voucher por WhatsApp 💬
+                      </Button>
+                    ) : (
+                      <Button 
+                        className="w-full bg-[#C19A6B] hover:bg-[#A98256] text-black font-extrabold text-sm py-6 gap-2"
+                        onClick={handleReleaseVoucher}
+                        disabled={
+                          releasingVoucher || 
+                          !(selectedBooking.payment_status === 'deposit_received' || selectedBooking.payment_status === 'paid') ||
+                          !hotelConfirmationNo
+                        }
+                      >
+                        {releasingVoucher ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                            Generando y Enviando Voucher (Gotenberg)...
+                          </>
+                        ) : "Liberar Voucher al Cliente"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

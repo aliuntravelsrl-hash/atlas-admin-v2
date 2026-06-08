@@ -79,12 +79,7 @@ export function AppShell() {
                 <p className="text-gray-500 mt-2">Módulo en desarrollo. Esta sección permitirá gestionar inventario bloqueado con hoteles.</p>
               </div>
             } />
-            <Route path="sales/confirmaciones" element={
-              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
-                <h2 className="text-xl font-bold text-gray-800">Sección de Confirmaciones de Venta</h2>
-                <p className="text-gray-500 mt-2">Módulo en desarrollo. Permite auditar e ingresar el localizador final del hotel.</p>
-              </div>
-            } />
+            <Route path="sales/confirmaciones" element={<AdminBookingsPanel />} />
             <Route path="financial/dashboard" element={
               <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
                 <h2 className="text-xl font-bold text-gray-800">Dashboard de Análisis Financiero</h2>

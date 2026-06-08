@@ -8,27 +8,27 @@ export const AdminAuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check localStorage on mount
+    // Restaurar sesión de localStorage al montar el componente
     const storedUser = localStorage.getItem('aliun_admin_user');
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         
-        // Optional: Check if session is expired (e.g., > 24 hours)
+        // Expirar sesión si supera las 24 horas
         const loginTime = parsedUser.loginTime || 0;
         const ONE_DAY = 24 * 60 * 60 * 1000;
         const now = Date.now();
 
         if (now - loginTime > ONE_DAY) {
-          console.warn('⚠️ Session expired, clearing local storage');
+          console.warn('⚠️ Admin session expired, clearing storage');
           localStorage.removeItem('aliun_admin_user');
           setUser(null);
         } else {
-          console.log('✅ Session restored for:', parsedUser.email);
+          console.log('✅ Admin session restored for:', parsedUser.email);
           setUser(parsedUser);
         }
       } catch (e) {
-        console.error("Error parsing stored user", e);
+        console.error("Error parsing stored admin user", e);
         localStorage.removeItem('aliun_admin_user');
       }
     }
@@ -36,36 +36,28 @@ export const AdminAuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    console.log(`🔐 Attempting login for: ${email}`);
+    console.log(`🔐 Attempting secure admin login for: ${email}`);
     
     try {
-      // 1. Fetch user from Supabase
-      const { data: userData, error } = await supabase
-        .from('admin_users')
-        .select('*')
-        .eq('email', email)
-        .single();
+      // 1. Invocar la función RPC verify_admin_user en la base de datos (seguro, sin RLS anon bypass)
+      const { data: authResult, error } = await supabase
+        .rpc('verify_admin_user', {
+          p_email: email,
+          p_password: password
+        });
 
-      if (error || !userData) {
-        console.error('❌ Login Failed: User not found or DB error', error);
-        return { success: false, error: 'Usuario no encontrado' };
+      if (error) {
+        console.error('❌ Login Failed: RPC execution error', error);
+        return { success: false, error: 'Error al conectar con el servidor de autenticación' };
       }
 
-      // 2. Check if active
-      if (userData.is_active === false) {
-        console.warn(`⛔ Login Blocked: Account ${email} is inactive`);
-        return { success: false, error: 'Cuenta desactivada. Contacte al administrador.' };
+      if (!authResult || !authResult.success) {
+        console.warn('⚠️ Login Failed:', authResult?.error || 'Credenciales inválidas');
+        return { success: false, error: authResult?.error || 'Credenciales inválidas' };
       }
 
-      // 3. Validate Password (using plain text comparison for this specific demo environment)
-      const isValidPassword = (password === userData.password_hash);
-
-      if (!isValidPassword) {
-        console.warn('⚠️ Login Failed: Invalid password');
-        return { success: false, error: 'Credenciales inválidas' };
-      }
-
-      // 4. Successful Login
+      // 2. Inicio de sesión exitoso
+      const userData = authResult.user;
       const sessionUser = {
         id: userData.id,
         email: userData.email,
@@ -75,7 +67,7 @@ export const AdminAuthProvider = ({ children }) => {
         lastLoginISO: new Date().toISOString()
       };
 
-      console.log('🎉 Login Successful:', sessionUser.email);
+      console.log('🎉 Admin Login Successful:', sessionUser.email);
       setUser(sessionUser);
       localStorage.setItem('aliun_admin_user', JSON.stringify(sessionUser));
       
@@ -88,13 +80,16 @@ export const AdminAuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    console.log('👋 Logging out');
+    console.log('👋 Admin logging out');
     setUser(null);
     localStorage.removeItem('aliun_admin_user');
   };
 
+  // Exponer isAdmin de forma reactiva y en minúsculas para mayor robustez
+  const isAdmin = user?.role ? ['admin', 'super_admin'].includes(user.role.toLowerCase()) : false;
+
   return (
-    <AdminAuthContext.Provider value={{ user, login, logout, loading, isAuthenticated: !!user }}>
+    <AdminAuthContext.Provider value={{ user, login, logout, loading, isAuthenticated: !!user, isAdmin }}>
       {children}
     </AdminAuthContext.Provider>
   );
