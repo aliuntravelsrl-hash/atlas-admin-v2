@@ -68,7 +68,7 @@ export const DashboardHome = () => {
       {/* Quick Actions */}
       <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
         <h2 className="text-lg font-bold mb-4 text-gray-800">Acciones Rápidas</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <button
             onClick={() => navigate('/marketing/offers/new')}
             className="p-4 border-2 border-blue-100 rounded-lg hover:border-blue-500 hover:bg-blue-50/50 transition text-left"
@@ -103,6 +103,15 @@ export const DashboardHome = () => {
             <div className="text-3xl mb-2">🧠</div>
             <div className="font-semibold text-gray-800">Análisis Intelligence</div>
             <div className="text-xs text-gray-500 mt-1">Ver atractividad del inventario de hoteles.</div>
+          </button>
+
+          <button
+            onClick={() => navigate('/admin/excursions')}
+            className="p-4 border-2 border-teal-100 rounded-lg hover:border-teal-500 hover:bg-teal-50/50 transition text-left"
+          >
+            <div className="text-3xl mb-2">🌴</div>
+            <div className="font-semibold text-gray-800">Gestión Excursiones</div>
+            <div className="text-xs text-gray-500 mt-1">Inventario y reservas manuales.</div>
           </button>
         </div>
       </div>

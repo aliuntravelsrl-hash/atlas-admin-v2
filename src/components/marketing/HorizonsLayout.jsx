@@ -100,6 +100,12 @@ export const HorizonsLayout = () => {
       current: location.pathname === '/admin/hotels'
     },
     {
+      name: 'Excursiones 🌴',
+      icon: '🌴',
+      href: '/admin/excursions',
+      current: location.pathname === '/admin/excursions'
+    },
+    {
       name: 'Habitaciones/Inventario 🛏️',
       icon: '🛏️',
       href: '/admin/inventory',

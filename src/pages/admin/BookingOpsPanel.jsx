@@ -1,0 +1,1057 @@
+/**
+ * BookingOpsPanel.jsx
+ * Panel Operativo de Reservas — Aliun Travel SRL
+ * Core 2: Gestión manual de reservas de hoteles y excursiones
+ * Ruta: /dashboard26
+ *
+ * Tabs:
+ *   1 — Nueva reserva (hotel)
+ *   2 — Reservas (listado)
+ *   3 — Registrar pago
+ *   4 — Recibo
+ *   5 — Reserva de excursión (nuevo)
+ *
+ * ATLAS-TECH · 11 JUN 2026
+ */
+
+import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+// ── Clientes Supabase ────────────────────────────────────────
+const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+const SUPA_SERVICE = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+
+const supabase = createClient(SUPA_URL, SUPA_ANON)
+const supabaseAdmin = createClient(SUPA_URL, SUPA_SERVICE)
+
+const EXCHANGE_RATE = 58.5
+
+// ── Utilidades ───────────────────────────────────────────────
+const fmt = (n) => parseFloat(n || 0).toFixed(2)
+const genRef = () => 'ALN-' + Date.now().toString(36).toUpperCase().slice(-6)
+const calcNights = (ci, co) =>
+  ci && co ? Math.round((new Date(co) - new Date(ci)) / 86400000) : 0
+
+// ── Tab Bar ──────────────────────────────────────────────────
+const TABS = [
+  { id: 'nueva',      label: '+ Nueva reserva' },
+  { id: 'listado',    label: 'Reservas' },
+  { id: 'pago',       label: 'Registrar pago' },
+  { id: 'recibo',     label: 'Recibo' },
+  { id: 'excursion',  label: '🌴 Excursión' },
+]
+
+// ── Métodos de pago ──────────────────────────────────────────
+const METODOS = [
+  { value: 'transferencia', label: 'Transferencia bancaria' },
+  { value: 'efectivo',      label: 'Efectivo' },
+  { value: 'tarjeta',       label: 'Tarjeta' },
+  { value: 'zelle',         label: 'Zelle' },
+  { value: 'paypal',        label: 'PayPal' },
+  { value: 'enlace_pago',   label: 'Enlace de pago' },
+]
+
+// ════════════════════════════════════════════════════════════
+// COMPONENTE PRINCIPAL
+// ════════════════════════════════════════════════════════════
+export default function BookingOpsPanel() {
+  const [activeTab, setActiveTab] = useState('nueva')
+  const [toast, setToast]         = useState(null)
+  const [bookings, setBookings]   = useState([])
+  const [hotels, setHotels]       = useState([])
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // Cargar hoteles y reservas al montar
+  useEffect(() => {
+    supabase
+      .from('hotels_master')
+      .select('id, slug, name, zone')
+      .eq('is_active', true)
+      .order('zone')
+      .then(({ data }) => setHotels(data || []))
+
+    loadBookings()
+  }, [])
+
+  const loadBookings = useCallback(async () => {
+    const { data } = await supabaseAdmin
+      .from('bookings')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(60)
+    setBookings(data || [])
+  }, [])
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-white">Operaciones · Reservas Core 2</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Panel manual · Aliun Travel SRL</p>
+        </div>
+        <span className="text-xs text-emerald-400 border border-emerald-800 px-3 py-1 rounded-full">
+          ● Conectado
+        </span>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`mb-4 px-4 py-3 rounded-lg text-sm font-medium ${
+          toast.type === 'success'
+            ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-800'
+            : 'bg-red-900/50 text-red-300 border border-red-800'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Tab Bar */}
+      <div className="flex gap-1 border-b border-gray-800 mb-6">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.id
+                ? 'border-white text-white'
+                : 'border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      {activeTab === 'nueva' && (
+        <TabNuevaReserva
+          hotels={hotels}
+          onCreated={(ref) => {
+            showToast(`✓ Reserva creada: ${ref}`)
+            loadBookings()
+            setActiveTab('listado')
+          }}
+          onError={(e) => showToast(e, 'error')}
+        />
+      )}
+
+      {activeTab === 'listado' && (
+        <TabListado
+          bookings={bookings}
+          hotels={hotels}
+          onConfirm={async (id, ref) => {
+            await supabaseAdmin.from('bookings').update({
+              status: 'confirmed',
+              fulfillment_status: 'confirmed',
+              validated_by: 'admin',
+              validated_at: new Date().toISOString(),
+            }).eq('id', id)
+            showToast(`✓ Reserva ${ref} confirmada`)
+            loadBookings()
+          }}
+          onCancel={async (id, ref) => {
+            if (!confirm(`¿Cancelar la reserva ${ref}?`)) return
+            await supabaseAdmin.from('bookings').update({
+              status: 'cancelled',
+              payment_status: 'cancelled',
+            }).eq('id', id)
+            showToast(`Reserva ${ref} cancelada`, 'error')
+            loadBookings()
+          }}
+          onPago={(id) => setActiveTab('pago')}
+          onRecibo={(id) => setActiveTab('recibo')}
+        />
+      )}
+
+      {activeTab === 'pago' && (
+        <TabPago
+          bookings={bookings}
+          onRegistered={async () => {
+            showToast('✓ Abono registrado correctamente')
+            await loadBookings()
+          }}
+          onError={(e) => showToast(e, 'error')}
+        />
+      )}
+
+      {activeTab === 'recibo' && (
+        <TabRecibo bookings={bookings} hotels={hotels} />
+      )}
+
+      {activeTab === 'excursion' && (
+        <TabExcursion
+          onCreated={(ref) => {
+            showToast(`✓ Reserva de excursión creada: ${ref}`)
+            loadBookings()
+            setActiveTab('listado')
+          }}
+          onError={(e) => showToast(e, 'error')}
+        />
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 1 — NUEVA RESERVA (HOTEL)
+// ════════════════════════════════════════════════════════════
+function TabNuevaReserva({ hotels, onCreated, onError }) {
+  const [form, setForm] = useState({
+    hotel_id: '', room_id: '', check_in: '', check_out: '',
+    adults: 2, children: 0, infants: 0,
+    lead_guest_name: '', lead_email: '', lead_phone: '', nationality: 'DO',
+    total_amount: '', deposit_amount: '', payment_method: '', internal_notes: '',
+  })
+  const [rooms, setRooms]   = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const nights = calcNights(form.check_in, form.check_out)
+  const total  = parseFloat(form.total_amount) || 0
+  const dep    = parseFloat(form.deposit_amount) || 0
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const loadRooms = async (hotelId) => {
+    if (!hotelId) { setRooms([]); return }
+    const { data } = await supabase
+      .from('rooms')
+      .select('id, name')
+      .eq('hotel_id', hotelId)
+    setRooms(data || [])
+  }
+
+  const handleSubmit = async () => {
+    if (!form.hotel_id || !form.lead_guest_name || !form.check_in || !form.check_out || total <= 0) {
+      onError('Completa: hotel, huésped, fechas y precio total.')
+      return
+    }
+    setLoading(true)
+    const hotel  = hotels.find(h => h.id === form.hotel_id)
+    const room   = rooms.find(r => r.id === form.room_id)
+    const ref    = genRef()
+
+    const { error } = await supabaseAdmin.from('bookings').insert({
+      booking_reference:   ref,
+      hotel_id:            form.hotel_id,
+      hotel_code:          hotel?.slug || null,
+      room_id:             form.room_id || null,
+      room_name:           room?.name || null,
+      lead_guest_name:     'Mr/Ms ' + form.lead_guest_name,
+      lead_email:          form.lead_email || null,
+      lead_phone:          form.lead_phone || null,
+      nationality:         form.nationality || 'DO',
+      check_in:            form.check_in,
+      check_out:           form.check_out,
+      nights,
+      adults:              parseInt(form.adults),
+      children:            parseInt(form.children),
+      infants:             parseInt(form.infants),
+      total_amount:        total,
+      currency:            'USD',
+      total_amount_dop:    Math.round(total * EXCHANGE_RATE),
+      exchange_rate:       EXCHANGE_RATE,
+      deposit_amount:      dep > 0 ? dep : null,
+      payment_method:      form.payment_method || null,
+      payment_status:      'unpaid',
+      status:              'pending_validation',
+      booking_type:        'individual',
+      source:              'manual_admin',
+      internal_notes:      form.internal_notes || null,
+    })
+
+    setLoading(false)
+    if (error) { onError('Error: ' + error.message); return }
+    onCreated(ref)
+    setForm({
+      hotel_id: '', room_id: '', check_in: '', check_out: '',
+      adults: 2, children: 0, infants: 0,
+      lead_guest_name: '', lead_email: '', lead_phone: '', nationality: 'DO',
+      total_amount: '', deposit_amount: '', payment_method: '', internal_notes: '',
+    })
+  }
+
+  // Zonas para agrupar hoteles
+  const zones = [...new Set(hotels.map(h => h.zone))].sort()
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {/* Hotel + Habitación */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Hotel *">
+          <select
+            className={selectCls}
+            value={form.hotel_id}
+            onChange={e => { set('hotel_id', e.target.value); loadRooms(e.target.value) }}
+          >
+            <option value="">Seleccionar hotel...</option>
+            {zones.map(z => (
+              <optgroup key={z} label={z}>
+                {hotels.filter(h => h.zone === z).map(h => (
+                  <option key={h.id} value={h.id}>{h.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </Field>
+        <Field label="Habitación">
+          <select className={selectCls} value={form.room_id} onChange={e => set('room_id', e.target.value)}>
+            <option value="">Sin habitación específica</option>
+            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {/* Fechas */}
+      <div className="grid grid-cols-3 gap-4">
+        <Field label="Check-in *">
+          <input className={inputCls} type="date" value={form.check_in} onChange={e => set('check_in', e.target.value)} />
+        </Field>
+        <Field label="Check-out *">
+          <input className={inputCls} type="date" value={form.check_out} onChange={e => set('check_out', e.target.value)} />
+        </Field>
+        <Field label="Noches">
+          <input className={inputCls + ' opacity-50'} type="number" value={nights} readOnly />
+        </Field>
+      </div>
+
+      {/* PAX */}
+      <div className="grid grid-cols-3 gap-4">
+        <Field label="Adultos *">
+          <input className={inputCls} type="number" min="1" value={form.adults} onChange={e => set('adults', e.target.value)} />
+        </Field>
+        <Field label="Niños (2–11)">
+          <input className={inputCls} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} />
+        </Field>
+        <Field label="Infantes (0–1)">
+          <input className={inputCls} type="number" min="0" value={form.infants} onChange={e => set('infants', e.target.value)} />
+        </Field>
+      </div>
+
+      {/* Huésped */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Nombre del huésped *">
+          <input className={inputCls} type="text" placeholder="Juan Pérez" value={form.lead_guest_name} onChange={e => set('lead_guest_name', e.target.value)} />
+        </Field>
+        <Field label="Email">
+          <input className={inputCls} type="email" placeholder="juan@email.com" value={form.lead_email} onChange={e => set('lead_email', e.target.value)} />
+        </Field>
+        <Field label="Teléfono">
+          <input className={inputCls} type="text" placeholder="+1 809 000 0000" value={form.lead_phone} onChange={e => set('lead_phone', e.target.value)} />
+        </Field>
+        <Field label="Nacionalidad">
+          <input className={inputCls} type="text" placeholder="DO" value={form.nationality} onChange={e => set('nationality', e.target.value)} />
+        </Field>
+      </div>
+
+      <hr className="border-gray-800" />
+
+      {/* Precios */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Precio total acordado (USD) *">
+          <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={form.total_amount} onChange={e => set('total_amount', e.target.value)} />
+        </Field>
+        <Field label="Depósito requerido (USD)">
+          <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={form.deposit_amount} onChange={e => set('deposit_amount', e.target.value)} />
+        </Field>
+        <Field label="Método de pago">
+          <select className={selectCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
+            <option value="">Seleccionar...</option>
+            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Notas internas">
+          <input className={inputCls} type="text" placeholder="Observaciones..." value={form.internal_notes} onChange={e => set('internal_notes', e.target.value)} />
+        </Field>
+      </div>
+
+      {/* Preview totales */}
+      {total > 0 && (
+        <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1">
+          <Row label="Total acordado"   value={`$${fmt(total)}`} />
+          <Row label="Depósito"         value={dep > 0 ? `$${fmt(dep)}` : '—'} />
+          <Row label="Saldo pendiente"  value={`$${fmt(total - dep)}`} />
+          <Row label="Total en DOP"     value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+        </div>
+      )}
+
+      <button onClick={handleSubmit} disabled={loading} className={btnPrimary}>
+        {loading ? 'Creando...' : 'Crear reserva'}
+      </button>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 2 — LISTADO DE RESERVAS
+// ════════════════════════════════════════════════════════════
+function TabListado({ bookings, hotels, onConfirm, onCancel, onPago, onRecibo }) {
+  const [q, setQ]   = useState('')
+  const [st, setSt] = useState('')
+
+  const filtered = bookings.filter(b => {
+    const mq = !q || (b.booking_reference || '').toLowerCase().includes(q.toLowerCase()) ||
+      (b.lead_guest_name || '').toLowerCase().includes(q.toLowerCase())
+    const ms = !st || b.status === st
+    return mq && ms
+  })
+
+  return (
+    <div>
+      <div className="flex gap-3 mb-4">
+        <input
+          className={inputCls + ' flex-1'}
+          placeholder="Buscar por referencia o huésped..."
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
+        <select className={selectCls + ' w-48'} value={st} onChange={e => setSt(e.target.value)}>
+          <option value="">Todos los estados</option>
+          <option value="pending_validation">Pendiente</option>
+          <option value="confirmed">Confirmado</option>
+          <option value="cancelled">Cancelado</option>
+        </select>
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="text-center py-12 text-gray-500">No hay reservas</p>
+      )}
+
+      <div className="space-y-3">
+        {filtered.map(b => {
+          const hotel = hotels.find(h => h.id === b.hotel_id)
+          const isExc = b.booking_type === 'excursion'
+          return (
+            <div key={b.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <p className="font-medium text-white text-sm">
+                    {b.booking_reference} · {b.lead_guest_name}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {isExc ? '🌴 ' : '🏨 '}{hotel?.name || b.hotel_code || '—'}
+                    {b.room_name ? ` · ${b.room_name}` : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Badge status={b.status} />
+                  <Badge status={b.payment_status} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-4 text-xs text-gray-400 mb-3">
+                <span>{b.check_in} → {b.check_out}</span>
+                <span>{b.nights || 0} noches · {b.adults || 0}A {b.children || 0}N</span>
+                <span className="text-white font-medium">${fmt(b.total_amount)}</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-800">
+                {b.status !== 'confirmed' && b.status !== 'cancelled' && (
+                  <button onClick={() => onConfirm(b.id, b.booking_reference)} className={btnSuccess}>
+                    Confirmar
+                  </button>
+                )}
+                {b.status !== 'cancelled' && (
+                  <button onClick={() => onCancel(b.id, b.booking_reference)} className={btnDanger}>
+                    Cancelar
+                  </button>
+                )}
+                <button onClick={() => onPago(b.id)} className={btnSecondary}>Pago</button>
+                <button onClick={() => onRecibo(b.id)} className={btnSecondary}>Recibo</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 3 — REGISTRAR PAGO
+// ════════════════════════════════════════════════════════════
+function TabPago({ bookings, onRegistered, onError }) {
+  const [bookingId, setBookingId] = useState('')
+  const [payments, setPayments]   = useState([])
+  const [form, setForm]           = useState({ amount: '', method: '', reference: '', payer_name: '' })
+  const [loading, setLoading]     = useState(false)
+
+  const booking = bookings.find(b => b.id === bookingId)
+  const total   = parseFloat(booking?.total_amount || 0)
+  const paid    = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+  const balance = total - paid
+  const pct     = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+
+  useEffect(() => {
+    if (!bookingId) { setPayments([]); return }
+    supabaseAdmin
+      .from('atlas_payments')
+      .select('amount, method, created_at, reference, status')
+      .eq('booking_id', bookingId)
+      .in('status', ['approved', 'confirmed'])
+      .then(({ data }) => {
+        setPayments(data || [])
+        const b = bookings.find(x => x.id === bookingId)
+        setForm(f => ({ ...f, amount: '', payer_name: b?.lead_guest_name || '' }))
+      })
+  }, [bookingId])
+
+  const handlePago = async () => {
+    const amount = parseFloat(form.amount)
+    if (!bookingId || amount <= 0 || !form.method) {
+      onError('Completa reserva, monto y método de pago.')
+      return
+    }
+    setLoading(true)
+    const newTotal  = paid + amount
+    const newStatus = newTotal >= total ? 'paid' : 'partial'
+
+    const { error: e1 } = await supabaseAdmin.from('atlas_payments').insert({
+      booking_id:   bookingId,
+      amount,
+      currency:     'USD',
+      method:       form.method,
+      payment_type: 'deposit',
+      reference:    form.reference || null,
+      payer_name:   form.payer_name || null,
+      status:       'approved',
+      approved_by:  'admin',
+      approved_at:  new Date().toISOString(),
+      evidence:     { manual: true, registered_by: 'admin_panel' },
+    })
+
+    if (e1) { setLoading(false); onError('Error: ' + e1.message); return }
+
+    await supabaseAdmin
+      .from('bookings')
+      .update({ payment_status: newStatus })
+      .eq('id', bookingId)
+
+    setLoading(false)
+    setPayments(prev => [...prev, { amount, method: form.method, created_at: new Date().toISOString(), status: 'approved' }])
+    setForm(f => ({ ...f, amount: '', reference: '' }))
+    onRegistered()
+  }
+
+  return (
+    <div className="max-w-lg space-y-5">
+      <Field label="Reserva *">
+        <select className={selectCls} value={bookingId} onChange={e => setBookingId(e.target.value)}>
+          <option value="">Seleccionar reserva...</option>
+          {bookings.filter(b => b.status !== 'cancelled').map(b => (
+            <option key={b.id} value={b.id}>
+              {b.booking_reference} · {b.lead_guest_name} · ${fmt(b.total_amount)}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      {booking && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm">
+          <p className="font-medium text-white mb-1">{booking.booking_reference} · {booking.lead_guest_name}</p>
+          <p className="text-gray-400 text-xs mb-3">
+            Total: ${fmt(total)} · Pagado: ${fmt(paid)} · Pendiente: ${fmt(balance)}
+          </p>
+          <div className="bg-gray-800 rounded-full h-2 overflow-hidden">
+            <div className="bg-emerald-500 h-full transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-xs text-gray-500 mt-1">{pct}% cobrado</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Monto (USD) *">
+          <input className={inputCls} type="number" step="0.01" min="0.01" placeholder="0.00"
+            value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+        </Field>
+        <Field label="Método *">
+          <select className={selectCls} value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
+            <option value="">Seleccionar...</option>
+            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Referencia / comprobante">
+          <input className={inputCls} type="text" placeholder="Nro. transferencia..."
+            value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} />
+        </Field>
+        <Field label="Nombre del pagador">
+          <input className={inputCls} type="text" placeholder="Quién realizó el pago"
+            value={form.payer_name} onChange={e => setForm(f => ({ ...f, payer_name: e.target.value }))} />
+        </Field>
+      </div>
+
+      <button onClick={handlePago} disabled={loading} className={btnPrimary}>
+        {loading ? 'Registrando...' : 'Registrar abono'}
+      </button>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 4 — RECIBO
+// ════════════════════════════════════════════════════════════
+function TabRecibo({ bookings, hotels }) {
+  const [bookingId, setBookingId] = useState('')
+  const [payments, setPayments]   = useState([])
+  const [loaded, setLoaded]       = useState(false)
+
+  const booking = bookings.find(b => b.id === bookingId)
+  const hotel   = hotels.find(h => h.id === booking?.hotel_id)
+  const total   = parseFloat(booking?.total_amount || 0)
+  const paid    = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+  const balance = total - paid
+  const now     = new Date().toLocaleDateString('es-DO', { year: 'numeric', month: 'long', day: 'numeric' })
+
+  useEffect(() => {
+    if (!bookingId) { setPayments([]); setLoaded(false); return }
+    supabaseAdmin
+      .from('atlas_payments')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => { setPayments(data || []); setLoaded(true) })
+  }, [bookingId])
+
+  const buildReceiptHTML = () => {
+    const pRows = payments.map(p =>
+      `<tr><td style="padding:6px 0;color:#666">${new Date(p.created_at).toLocaleDateString('es-DO')}</td>
+       <td style="padding:6px 0">${p.method || '—'}${p.reference ? ' · ' + p.reference : ''}</td>
+       <td style="padding:6px 0;text-align:right;color:#16a34a;font-weight:600">+$${fmt(p.amount)}</td></tr>`
+    ).join('')
+
+    return `<html><head><title>Recibo ${booking.booking_reference}</title>
+<style>body{font-family:Arial,sans-serif;max-width:600px;margin:40px auto;color:#111;font-size:14px}
+hr{border:none;border-top:1px solid #e5e7eb;margin:16px 0}
+table{width:100%;border-collapse:collapse}.total{font-weight:700;font-size:16px}
+@media print{button{display:none}}</style></head><body>
+<div style="text-align:center;margin-bottom:20px;border-bottom:2px solid #111;padding-bottom:16px">
+  <h2 style="margin:0">ALIUN TRAVEL SRL</h2>
+  <p style="margin:4px 0;color:#666">Comprobante de reserva · ${now}</p>
+  <p style="margin:0;color:#666;font-size:12px">RNC: En trámite</p>
+</div>
+<table><tr><td style="color:#666;width:160px">Referencia</td><td><strong>${booking.booking_reference}</strong></td></tr>
+<tr><td style="color:#666">Estado</td><td>${booking.status === 'confirmed' ? '✓ Confirmado' : '⏳ Pendiente'}</td></tr>
+<tr><td style="color:#666">Huésped</td><td>${booking.lead_guest_name || '—'}</td></tr>
+<tr><td style="color:#666">Teléfono</td><td>${booking.lead_phone || '—'}</td></tr>
+<tr><td style="color:#666">Email</td><td>${booking.lead_email || '—'}</td></tr></table>
+<hr>
+<table>
+<tr><td style="color:#666;width:160px">${booking.booking_type === 'excursion' ? 'Excursión' : 'Hotel'}</td>
+    <td>${hotel?.name || booking.hotel_code || '—'}</td></tr>
+<tr><td style="color:#666">Plan / Hab.</td><td>${booking.room_name || 'Estándar'}</td></tr>
+<tr><td style="color:#666">Check-in</td><td><strong>${booking.check_in || '—'}</strong></td></tr>
+<tr><td style="color:#666">Check-out</td><td><strong>${booking.check_out || '—'}</strong></td></tr>
+<tr><td style="color:#666">PAX</td><td>${booking.adults || 0} adultos${booking.children > 0 ? \`, \${booking.children} niños\` : ''}</td></tr>
+<tr><td style="color:#666">Total acordado</td><td><strong>USD $${fmt(total)}</strong></td></tr>
+<tr><td style="color:#666">Total en DOP</td><td>RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}</td></tr>
+</table>
+${payments.length > 0 ? `<hr><h4 style="margin:0 0 8px">Historial de pagos</h4>
+<table>${pRows}</table>` : ''}
+<hr>
+<table>
+<tr><td style="color:#666">Total</td><td style="text-align:right">$${fmt(total)}</td></tr>
+<tr><td style="color:#666">Pagado</td><td style="text-align:right;color:#16a34a">$${fmt(paid)}</td></tr>
+<tr class="total"><td>Saldo pendiente</td>
+    <td style="text-align:right;color:${balance > 0 ? '#dc2626' : '#16a34a'}">${balance > 0 ? '$' + fmt(balance) : '✓ Saldado'}</td></tr>
+</table>
+<p style="text-align:center;color:#999;font-size:11px;margin-top:24px">
+Aliun Travel SRL · aliuntravelsrl.com · Generado ${now}</p>
+</body></html>`
+  }
+
+  const handlePrint = () => {
+    if (!booking) return
+    const w = window.open('', '_blank')
+    w.document.write(buildReceiptHTML())
+    w.document.close()
+    w.print()
+  }
+
+  const handleCopy = () => {
+    if (!booking) return
+    const text = `ALIUN TRAVEL SRL — RECIBO DE PAGO\n` +
+      `Ref: ${booking.booking_reference}\n` +
+      `Huésped: ${booking.lead_guest_name}\n` +
+      `Hotel/Excursión: ${hotel?.name || booking.hotel_code}\n` +
+      `Check-in: ${booking.check_in} · Check-out: ${booking.check_out}\n` +
+      `Total: $${fmt(total)} USD (RD$${Math.round(total * EXCHANGE_RATE).toLocaleString()})\n` +
+      `Pagado: $${fmt(paid)} · Saldo: $${fmt(balance)}\n` +
+      `Generado: ${now} · aliuntravelsrl.com`
+    navigator.clipboard.writeText(text).then(() => alert('Copiado al portapapeles'))
+  }
+
+  return (
+    <div className="max-w-lg space-y-5">
+      <div className="flex gap-3 items-end">
+        <Field label="Seleccionar reserva" className="flex-1">
+          <select className={selectCls} value={bookingId} onChange={e => setBookingId(e.target.value)}>
+            <option value="">Seleccionar...</option>
+            {bookings.map(b => (
+              <option key={b.id} value={b.id}>
+                {b.booking_reference} · {b.lead_guest_name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <button onClick={handlePrint} disabled={!loaded} className={btnSecondary}>🖨 Imprimir</button>
+        <button onClick={handleCopy} disabled={!loaded} className={btnSecondary}>📋 Copiar</button>
+      </div>
+
+      {loaded && booking && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 text-sm space-y-3">
+          <div className="text-center border-b border-gray-700 pb-4">
+            <p className="font-semibold text-white text-base">ALIUN TRAVEL SRL</p>
+            <p className="text-gray-400 text-xs mt-1">Comprobante de reserva · {now}</p>
+          </div>
+          <InfoGrid data={[
+            ['Referencia', booking.booking_reference],
+            ['Huésped', booking.lead_guest_name],
+            ['Hotel/Excursión', hotel?.name || booking.hotel_code || '—'],
+            ['Plan / Hab.', booking.room_name || 'Estándar'],
+            ['Check-in', booking.check_in],
+            ['Check-out', booking.check_out],
+            ['Total USD', `$${fmt(total)}`],
+            ['Total DOP', `RD$${Math.round(total * EXCHANGE_RATE).toLocaleString()}`],
+          ]} />
+          {payments.length > 0 && (
+            <>
+              <hr className="border-gray-800" />
+              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Historial de pagos</p>
+              {payments.map((p, i) => (
+                <div key={i} className="flex justify-between text-xs">
+                  <span className="text-gray-400">{new Date(p.created_at).toLocaleDateString('es-DO')} · {p.method}</span>
+                  <span className="text-emerald-400 font-medium">+${fmt(p.amount)}</span>
+                </div>
+              ))}
+            </>
+          )}
+          <hr className="border-gray-800" />
+          <div className="space-y-1">
+            <Row label="Total" value={`$${fmt(total)}`} />
+            <Row label="Pagado" value={`$${fmt(paid)}`} valueClass="text-emerald-400" />
+            <Row
+              label="Saldo pendiente"
+              value={balance > 0 ? `$${fmt(balance)}` : '✓ Saldado'}
+              valueClass={balance > 0 ? 'text-red-400 font-semibold' : 'text-emerald-400 font-semibold'}
+            />
+          </div>
+        </div>
+      )}
+
+      {!bookingId && (
+        <p className="text-center py-10 text-gray-500 text-sm">Selecciona una reserva para generar el recibo</p>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// TAB 5 — RESERVA DE EXCURSIÓN (NUEVO)
+// ════════════════════════════════════════════════════════════
+function TabExcursion({ onCreated, onError }) {
+  const [excursions, setExcursions] = useState([])
+  const [plans, setPlans]           = useState([])
+  const [form, setForm]             = useState({
+    excursion_id: '', excursion_slug: '', excursion_name: '',
+    plan_id: '', plan_name: '', plan_price_adult: 0, plan_price_child: 0,
+    fecha: '', adults: 2, children: 0, infants: 0,
+    total_amount: '', lead_guest_name: '', lead_email: '', lead_phone: '',
+    payment_method: '', internal_notes: '',
+  })
+  const [loading, setLoading] = useState(false)
+
+  // Cargar excursiones activas
+  useEffect(() => {
+    supabase
+      .from('excursions')
+      .select('id, slug, name, zone, confirmation_type')
+      .eq('is_active', true)
+      .order('zone')
+      .then(({ data }) => setExcursions(data || []))
+  }, [])
+
+  // Cargar planes al seleccionar excursión
+  const handleExcursionChange = async (excursionId) => {
+    const exc = excursions.find(e => e.id === excursionId)
+    setForm(f => ({
+      ...f,
+      excursion_id:   excursionId,
+      excursion_slug: exc?.slug || '',
+      excursion_name: exc?.name || '',
+      plan_id: '', plan_name: '', plan_price_adult: 0, plan_price_child: 0,
+      total_amount: '',
+    }))
+    if (!excursionId) { setPlans([]); return }
+    const { data } = await supabase
+      .from('excursion_plans')
+      .select('id, slug, name, price_adult_usd, price_child_usd, duration_label')
+      .eq('excursion_id', excursionId)
+      .eq('is_active', true)
+      .order('sort_order')
+    setPlans(data || [])
+  }
+
+  const handlePlanChange = (planId) => {
+    const plan = plans.find(p => p.id === planId)
+    const adults   = parseInt(form.adults) || 2
+    const children = parseInt(form.children) || 0
+    const total    = plan
+      ? (adults * plan.price_adult_usd) + (children * plan.price_child_usd)
+      : 0
+    setForm(f => ({
+      ...f,
+      plan_id:          planId,
+      plan_name:        plan?.name || '',
+      plan_price_adult: plan?.price_adult_usd || 0,
+      plan_price_child: plan?.price_child_usd || 0,
+      total_amount:     total > 0 ? total.toFixed(2) : '',
+    }))
+  }
+
+  // Recalcular total cuando cambian PAX
+  const recalcTotal = (adults, children) => {
+    if (!form.plan_id) return
+    const total = (parseInt(adults) * form.plan_price_adult) +
+                  (parseInt(children) * form.plan_price_child)
+    setForm(f => ({ ...f, total_amount: total.toFixed(2) }))
+  }
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleSubmit = async () => {
+    if (!form.excursion_id || !form.plan_id || !form.fecha || !form.lead_guest_name) {
+      onError('Completa: excursión, plan, fecha y nombre del huésped.')
+      return
+    }
+    const total = parseFloat(form.total_amount) || 0
+    if (total <= 0) { onError('El precio total debe ser mayor a 0.'); return }
+
+    setLoading(true)
+    const ref = genRef()
+
+    const { error } = await supabaseAdmin.from('bookings').insert({
+      booking_reference:  ref,
+      booking_type:       'excursion',
+      source:             'manual_admin',
+      // Reutilizamos campos existentes de bookings
+      hotel_code:         form.excursion_slug,    // excursion_slug
+      room_name:          form.plan_name,          // plan_name
+      check_in:           form.fecha,
+      check_out:          form.fecha,              // mismo día
+      nights:             0,
+      adults:             parseInt(form.adults),
+      children:           parseInt(form.children),
+      infants:            parseInt(form.infants),
+      lead_guest_name:    'Mr/Ms ' + form.lead_guest_name,
+      lead_email:         form.lead_email || null,
+      lead_phone:         form.lead_phone || null,
+      total_amount:       total,
+      currency:           'USD',
+      total_amount_dop:   Math.round(total * EXCHANGE_RATE),
+      exchange_rate:      EXCHANGE_RATE,
+      payment_method:     form.payment_method || null,
+      payment_status:     'unpaid',
+      status:             'pending_validation',
+      internal_notes:     form.internal_notes || null,
+      special_requests:   {
+        excursion_id:   form.excursion_id,
+        excursion_name: form.excursion_name,
+        plan_id:        form.plan_id,
+        plan_name:      form.plan_name,
+      },
+    })
+
+    setLoading(false)
+    if (error) { onError('Error: ' + error.message); return }
+    onCreated(ref)
+    setForm({
+      excursion_id: '', excursion_slug: '', excursion_name: '',
+      plan_id: '', plan_name: '', plan_price_adult: 0, plan_price_child: 0,
+      fecha: '', adults: 2, children: 0, infants: 0,
+      total_amount: '', lead_guest_name: '', lead_email: '', lead_phone: '',
+      payment_method: '', internal_notes: '',
+    })
+    setPlans([])
+  }
+
+  const total    = parseFloat(form.total_amount) || 0
+  const excursion = excursions.find(e => e.id === form.excursion_id)
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {/* Aviso on_request */}
+      {excursion?.confirmation_type === 'on_request' && (
+        <div className="bg-amber-900/30 border border-amber-700 rounded-lg px-4 py-3 text-sm text-amber-300">
+          ⚠️ Esta excursión requiere confirmación manual con el operador. Respuesta en máx. 24h.
+        </div>
+      )}
+
+      {/* Excursión + Plan */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Excursión *">
+          <select
+            className={selectCls}
+            value={form.excursion_id}
+            onChange={e => handleExcursionChange(e.target.value)}
+          >
+            <option value="">Seleccionar excursión...</option>
+            {excursions.map(e => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Plan *">
+          <select
+            className={selectCls}
+            value={form.plan_id}
+            onChange={e => handlePlanChange(e.target.value)}
+            disabled={!form.excursion_id}
+          >
+            <option value="">Seleccionar plan...</option>
+            {plans.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} — ${p.price_adult_usd}A / ${p.price_child_usd}N
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      {/* Fecha + PAX */}
+      <div className="grid grid-cols-4 gap-4">
+        <Field label="Fecha *" className="col-span-1">
+          <input className={inputCls} type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} />
+        </Field>
+        <Field label="Adultos *">
+          <input className={inputCls} type="number" min="1" value={form.adults}
+            onChange={e => { set('adults', e.target.value); recalcTotal(e.target.value, form.children) }} />
+        </Field>
+        <Field label="Niños (2–11)">
+          <input className={inputCls} type="number" min="0" value={form.children}
+            onChange={e => { set('children', e.target.value); recalcTotal(form.adults, e.target.value) }} />
+        </Field>
+        <Field label="Infantes">
+          <input className={inputCls} type="number" min="0" value={form.infants}
+            onChange={e => set('infants', e.target.value)} />
+        </Field>
+      </div>
+
+      {/* Huésped */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Nombre del huésped *">
+          <input className={inputCls} type="text" placeholder="Juan Pérez"
+            value={form.lead_guest_name} onChange={e => set('lead_guest_name', e.target.value)} />
+        </Field>
+        <Field label="Email">
+          <input className={inputCls} type="email" placeholder="juan@email.com"
+            value={form.lead_email} onChange={e => set('lead_email', e.target.value)} />
+        </Field>
+        <Field label="Teléfono">
+          <input className={inputCls} type="text" placeholder="+1 809 000 0000"
+            value={form.lead_phone} onChange={e => set('lead_phone', e.target.value)} />
+        </Field>
+        <Field label="Método de pago">
+          <select className={selectCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
+            <option value="">Seleccionar...</option>
+            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {/* Precio + Notas */}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Precio total acordado (USD) *">
+          <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00"
+            value={form.total_amount} onChange={e => set('total_amount', e.target.value)} />
+        </Field>
+        <Field label="Notas internas">
+          <input className={inputCls} type="text" placeholder="Observaciones..."
+            value={form.internal_notes} onChange={e => set('internal_notes', e.target.value)} />
+        </Field>
+      </div>
+
+      {/* Preview totales */}
+      {total > 0 && (
+        <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1">
+          {form.excursion_name && <Row label="Excursión" value={form.excursion_name} />}
+          {form.plan_name && <Row label="Plan" value={form.plan_name} />}
+          {form.fecha && <Row label="Fecha" value={form.fecha} />}
+          <Row label="Total acordado" value={`$${fmt(total)}`} />
+          <Row label="Total en DOP" value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+        </div>
+      )}
+
+      <button onClick={handleSubmit} disabled={loading} className={btnPrimary}>
+        {loading ? 'Creando...' : 'Crear reserva de excursión'}
+      </button>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════
+// COMPONENTES AUXILIARES
+// ════════════════════════════════════════════════════════════
+function Field({ label, children, className = '' }) {
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function Row({ label, value, valueClass = 'text-white' }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-gray-400">{label}</span>
+      <span className={valueClass}>{value}</span>
+    </div>
+  )
+}
+
+function InfoGrid({ data }) {
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      {data.map(([k, v]) => (
+        <>
+          <span key={k + '_k'} className="text-gray-400">{k}</span>
+          <span key={k + '_v'} className="text-white font-medium">{v}</span>
+        </>
+      ))}
+    </div>
+  )
+}
+
+function Badge({ status }) {
+  const map = {
+    confirmed:          'bg-emerald-900/50 text-emerald-400 border-emerald-800',
+    cancelled:          'bg-red-900/50 text-red-400 border-red-800',
+    pending_validation: 'bg-amber-900/50 text-amber-400 border-amber-800',
+    paid:               'bg-emerald-900/50 text-emerald-400 border-emerald-800',
+    partial:            'bg-amber-900/50 text-amber-400 border-amber-800',
+    unpaid:             'bg-red-900/50 text-red-400 border-red-800',
+  }
+  const labels = {
+    confirmed: 'Confirmado', cancelled: 'Cancelado',
+    pending_validation: 'Pendiente', paid: 'Pagado',
+    partial: 'Parcial', unpaid: 'Sin pago',
+  }
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full border ${map[status] || 'bg-gray-800 text-gray-400 border-gray-700'}`}>
+      {labels[status] || status}
+    </span>
+  )
+}
+
+// ── Clases base ──────────────────────────────────────────────
+const inputCls   = 'w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-500'
+const selectCls  = inputCls
+const btnPrimary = 'bg-white text-gray-950 font-medium text-sm px-5 py-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50'
+const btnSecondary = 'bg-gray-800 text-gray-300 text-sm px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50'
+const btnSuccess = 'text-emerald-400 text-xs px-3 py-1.5 rounded-lg border border-emerald-800 hover:bg-emerald-900/30 transition-colors'
+const btnDanger  = 'text-red-400 text-xs px-3 py-1.5 rounded-lg border border-red-800 hover:bg-red-900/30 transition-colors'

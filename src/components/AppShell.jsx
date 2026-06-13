@@ -22,12 +22,15 @@ import ApiToolbox from '../features/api-toolbox/pages/ApiToolbox'
 
 // Admin Core 2 Components & Pages
 import AdminDashboardPage from '../pages/admin/AdminDashboardPage'
+import BookingOpsPanel from '../pages/admin/BookingOpsPanel'
 import AdminHotelsPage from '../pages/admin/AdminHotelsPage'
 import HotelsInventoryDashboard from './admin/HotelsInventoryDashboard'
 import AdminRatesPage from '../pages/admin/AdminRatesPage'
 import AdminSeasonsPage from '../pages/admin/AdminSeasonsPage'
 import AdminBookingsPanel from './admin/AdminBookingsPanel'
 import AdminPricingPage from '../pages/admin/AdminPricingPage'
+import AdminSalesPage from '../pages/admin/AdminSalesPage'
+import AdminExcursionsPage from '../pages/admin/AdminExcursionsPage'
 
 import { AdminAuthProvider } from '@/contexts/AdminAuthContext'
 
@@ -44,7 +47,7 @@ export function AppShell() {
               <Route index element={<DashboardHome />} />
               
               {/* Phase 2 Modules */}
-              <Route path="dashboard26" element={<AdminDashboardPage />} />
+              <Route path="dashboard26" element={<BookingOpsPanel />} />
               <Route path="warroom" element={<WarRoomV41 />} />
               <Route path="integrity" element={<IntegrityMonitor />} />
               <Route path="admin41" element={<AdminPanel41 />} />
@@ -55,6 +58,7 @@ export function AppShell() {
 
               {/* Admin Core 2 Routes */}
               <Route path="admin/hotels" element={<AdminHotelsPage />} />
+              <Route path="admin/excursions" element={<AdminExcursionsPage />} />
               <Route path="admin/inventory" element={<HotelsInventoryDashboard />} />
               <Route path="admin/tarifas" element={<AdminRatesPage />} />
               <Route path="admin/temporadas" element={<AdminSeasonsPage />} />
@@ -67,12 +71,7 @@ export function AppShell() {
             <Route path="marketing/offers/new" element={<CreateOfferForm />} />
             
             {/* Rutas placeholders para las otras secciones de Horizons */}
-            <Route path="sales/offers" element={
-              <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
-                <h2 className="text-xl font-bold text-gray-800">Sección de Ofertas de Ventas</h2>
-                <p className="text-gray-500 mt-2">Módulo en desarrollo. Esta sección permitirá registrar ventas directas.</p>
-              </div>
-            } />
+            <Route path="sales/offers" element={<AdminSalesPage />} />
             <Route path="sales/bloqueos" element={
               <div className="bg-white rounded-lg shadow p-6 border border-gray-100">
                 <h2 className="text-xl font-bold text-gray-800">Sección de Bloqueos de Cupos</h2>
