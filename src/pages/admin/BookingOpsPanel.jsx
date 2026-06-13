@@ -646,7 +646,7 @@ table{width:100%;border-collapse:collapse}.total{font-weight:700;font-size:16px}
 <tr><td style="color:#666">Plan / Hab.</td><td>${booking.room_name || 'Estándar'}</td></tr>
 <tr><td style="color:#666">Check-in</td><td><strong>${booking.check_in || '—'}</strong></td></tr>
 <tr><td style="color:#666">Check-out</td><td><strong>${booking.check_out || '—'}</strong></td></tr>
-<tr><td style="color:#666">PAX</td><td>${booking.adults || 0} adultos${booking.children > 0 ? \`, \${booking.children} niños\` : ''}</td></tr>
+<tr><td style="color:#666">PAX</td><td>${booking.adults || 0} adultos${booking.children > 0 ? ', ' + booking.children + ' niños' : ''}</td></tr>
 <tr><td style="color:#666">Total acordado</td><td><strong>USD $${fmt(total)}</strong></td></tr>
 <tr><td style="color:#666">Total en DOP</td><td>RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}</td></tr>
 </table>
