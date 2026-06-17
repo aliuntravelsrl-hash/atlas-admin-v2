@@ -25,6 +25,8 @@ export const MissionControlLive = () => {
   const [criticalNoVoucher, setCriticalNoVoucher] = useState([]);
   const [warningNoVoucher, setWarningNoVoucher] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [incidentes, setIncidentes] = useState([]);
+  const [resumenIncidentes, setResumenIncidentes] = useState({ sin_resolver: 0 });
   const [tasks, setTasks] = useState([]);
 
   // 1. Polling de Salud del Sistema MCP / n8n (cada 30s)
@@ -85,6 +87,11 @@ export const MissionControlLive = () => {
         });
 
         setAgents(mapped);
+
+        // Gaps / Incidentes — visibles en el monitor, NUNCA en Notion
+        const incidentesRaw = data?.incidentes_recientes || [];
+        setIncidentes(incidentesRaw);
+        setResumenIncidentes({ sin_resolver: data?.resumen?.incidentes_sin_resolver || 0 });
       } catch (err) {
         console.error('Error fetching personal_ia:', err);
       }
@@ -282,6 +289,58 @@ export const MissionControlLive = () => {
           <div className="text-[10px] uppercase font-bold text-slate-500">Canceladas</div>
           <div className="text-2xl font-black text-slate-500 mt-1">{bookingStats.cancelled}</div>
         </div>
+      </div>
+
+      {/* Gaps / Incidentes — visibles en el monitor. Fuente: logs_operativos via rpc_personal_ia_status(). Nunca duplicado en Notion. */}
+      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 className="font-bold text-white text-lg flex items-center gap-2">
+            <span>🚨 Gaps / Incidentes</span>
+            {resumenIncidentes.sin_resolver > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-rose-500/15 border border-rose-500/20 text-rose-400">
+                {resumenIncidentes.sin_resolver} sin resolver
+              </span>
+            )}
+          </h3>
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Fuente: logs_operativos</span>
+        </div>
+
+        {incidentes.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-xs font-semibold">
+            Sin incidentes registrados.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+            {incidentes.map((inc, i) => {
+              const nivelStyle = {
+                CRITICAL: 'bg-rose-500/10 border-rose-500/30 text-rose-400',
+                WARNING: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+                INFO: 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+              }[inc.nivel] || 'bg-slate-800 border-slate-700 text-slate-400';
+
+              return (
+                <div key={inc.id || i} className={`border p-3 rounded-xl space-y-1.5 ${nivelStyle.split(' ').slice(0,2).join(' ')} bg-slate-950`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 text-[8px] font-black uppercase rounded-md border ${nivelStyle}`}>
+                      {inc.nivel}
+                    </span>
+                    {inc.escalado && (
+                      <span className="text-[8px] font-black uppercase text-amber-400">ESCALADO</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-white font-semibold leading-snug">{inc.evento}</div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">{inc.mensaje}</p>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-900">
+                    <span className="text-[9px] text-slate-500 font-bold">{inc.empleado || inc.origen || 'Sistema'}</span>
+                    <span className={`text-[8px] font-black uppercase ${inc.resuelto ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {inc.resuelto ? 'Resuelto' : 'Pendiente'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
