@@ -7,17 +7,7 @@ export const MissionControlLive = () => {
   // Catálogo de agentes de Aliun — poblado en tiempo real desde personal_ia (RRHH-IA)
   const [agents, setAgents] = useState([]);
 
-  const [n8nWorkflows] = useState([
-    { name: 'WF-A: Agente IA Ventas', id: '0ps4wRmBFXcAy0u2', type: 'Webhook', status: 'Live', dept: 'ATLAS-SALES' },
-    { name: 'WF-A-HUM: Humanización', id: 'WF-A-HUMANIZACION', type: 'Sub-Flow', status: 'Live', dept: 'ATLAS-SALES' },
-    { name: 'WF-REINDEX: Reindex RAG', id: 'gWWeTx9biC9obZsy', type: 'Webhook/Cron', status: 'Live', dept: 'ATLAS-OPS' },
-    { name: 'WF-BOOKING-API', id: 'fkeayENDXynocb8I', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' },
-    { name: 'WF-BOOKING-FULFILLMENT', id: 'UrFIhdYw7EOLFnQd', type: 'Webhook/Queue', status: 'Live', dept: 'ATLAS-OPS' },
-    { name: 'Flujo C - Cotización PDF', id: 'Da46ZVQGRpdgaI02', type: 'Webhook', status: 'Live', dept: 'ATLAS-FINANCE' },
-    { name: 'Flujo F - Voucher Hotel', id: 'T89xnmHoKMrFMhnT', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' },
-    { name: 'Flujo K - Confirmación PDF', id: 'clJ7YfPfzOLZSS0P', type: 'Webhook', status: 'Live', dept: 'ATLAS-FINANCE' },
-    { name: 'Ingesta Tarifas Core 1', id: 'OJFIUi2OcwEqMaF6', type: 'Webhook', status: 'Live', dept: 'ATLAS-OPS' }
-  ]);
+  const [n8nWorkflows, setN8nWorkflows] = useState([]);
 
   // Estados reales conectados a Supabase y n8n
   const [systemStatus, setSystemStatus] = useState({ mcp: '🔴', n8n: '🔴', supabase: '🔴', mcpVersion: '—', mcpTools: 0 });
@@ -99,6 +89,25 @@ export const MissionControlLive = () => {
 
     fetchPersonalIA();
     const interval = setInterval(fetchPersonalIA, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 1c. Polling de Workflows n8n reales (no hardcodeado) — cada 60s
+  useEffect(() => {
+    const fetchN8nWorkflows = async () => {
+      try {
+        const res = await fetch('https://n8n-n8n.xaruuo.easypanel.host/webhook/n8n-status');
+        if (res.ok) {
+          const data = await res.json();
+          setN8nWorkflows(data.workflows || []);
+        }
+      } catch (err) {
+        console.error('Error fetching n8n workflows:', err);
+      }
+    };
+
+    fetchN8nWorkflows();
+    const interval = setInterval(fetchN8nWorkflows, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -400,20 +409,34 @@ export const MissionControlLive = () => {
                 ))
               )
             ) : (
-              n8nWorkflows.map((wf, i) => (
-                <div key={i} className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
-                  <div>
-                    <div className="font-bold text-white text-xs">{wf.name}</div>
-                    <div className="text-[9px] text-slate-500 font-mono mt-0.5">ID: {wf.id} | {wf.type}</div>
-                  </div>
-                  <div className="text-right">
-                    <span className="px-2 py-0.5 text-[8px] font-black uppercase rounded-md border bg-emerald-500/10 border-emerald-500/20 text-emerald-400">
-                      {wf.status}
-                    </span>
-                    <div className="text-[8px] text-blue-400 mt-1 font-extrabold uppercase tracking-wider">{wf.dept}</div>
-                  </div>
+              n8nWorkflows.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 text-xs font-semibold animate-pulse">
+                  Cargando workflows...
                 </div>
-              ))
+              ) : (
+                n8nWorkflows.map((wf, i) => (
+                  <div key={wf.id || i} className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
+                    <div>
+                      <div className="font-bold text-white text-xs">{wf.name}</div>
+                      <div className="text-[9px] text-slate-500 font-mono mt-0.5">ID: {wf.id}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-2 py-0.5 text-[8px] font-black uppercase rounded-md border ${
+                        wf.status === 'Live'
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-500'
+                      }`}>
+                        {wf.status}
+                      </span>
+                      <div className={`text-[8px] mt-1 font-extrabold uppercase tracking-wider ${
+                        wf.owner === 'Sin asignar' ? 'text-slate-600' : 'text-blue-400'
+                      }`}>
+                        {wf.owner}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )
             )}
           </div>
         </div>
