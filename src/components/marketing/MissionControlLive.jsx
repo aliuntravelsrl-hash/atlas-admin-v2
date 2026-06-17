@@ -4,14 +4,8 @@ import { supabase } from '../../lib/supabaseClient';
 export const MissionControlLive = () => {
   const [activeTab, setActiveTab] = useState('workflows');
   
-  // Catálogo estructural de agentes de Aliun
-  const [agents, setAgents] = useState([
-    { name: 'Hermes Translator', role: 'Voucher Delivery', status: 'Online', lastActive: 'Hace 2 min' },
-    { name: 'Claw Booking Agent', role: 'Reservation Sync', status: 'Online', lastActive: 'Hace 1 min' },
-    { name: 'Horizons Copywriter', role: 'Content Generator', status: 'Online', lastActive: 'Procesando' },
-    { name: 'Aliun Auditor', role: 'Quality Assurance', status: 'Online', lastActive: 'Hace 5 min' },
-    { name: 'Kommo Connector', role: 'CRM Pipeline Sync', status: 'Offline', lastActive: 'Hace 1 hora' }
-  ]);
+  // Catálogo de agentes de Aliun — poblado en tiempo real desde personal_ia (RRHH-IA)
+  const [agents, setAgents] = useState([]);
 
   const [n8nWorkflows] = useState([
     { name: 'WF-A: Agente IA Ventas', id: '0ps4wRmBFXcAy0u2', type: 'Webhook', status: 'Live', dept: 'ATLAS-SALES' },
@@ -44,12 +38,9 @@ export const MissionControlLive = () => {
             mcp: data.status === 'ok' ? '🟢' : '🔴',
             mcpVersion: data.version || '—',
             mcpTools: data.tools || 0,
-            supabase: data.supabase === 'connected' ? '🟢' : '🔴',
+            supabase: (data.supabase === 'connected' || data.supabase === 'ok') ? '🟢' : '🔴',
             n8n: '🟢'
           });
-          setAgents(prev => prev.map(a => 
-            a.name === 'Hermes Translator' ? { ...a, status: data.status === 'ok' ? 'Online' : 'Offline', lastActive: 'Recién verificado' } : a
-          ));
         } else {
           setSystemStatus({ mcp: '🔴', n8n: '🟢', supabase: '🔴', mcpVersion: 'error', mcpTools: 0 });
         }
@@ -61,6 +52,46 @@ export const MissionControlLive = () => {
 
     fetchSystemStatus();
     const interval = setInterval(fetchSystemStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 1b. Polling de Personal IA (RRHH-IA) — roster real del enjambre Hermes (cada 60s)
+  useEffect(() => {
+    const fetchPersonalIA = async () => {
+      try {
+        const { data, error } = await supabase.rpc('rpc_personal_ia_status');
+        if (error) throw error;
+
+        const personal = data?.personal || [];
+
+        const mapped = personal.map(p => {
+          const mins = p.minutos_desde_heartbeat;
+          let lastActive = 'Sin datos';
+          if (mins !== null && mins !== undefined) {
+            if (mins < 1) lastActive = 'Recién verificado';
+            else if (mins < 60) lastActive = `Hace ${Math.round(mins)} min`;
+            else lastActive = `Hace ${Math.round(mins / 60)} h`;
+          }
+
+          const statusMap = { online: 'Online', idle: 'Busy', error: 'Offline', offline: 'Offline' };
+
+          return {
+            name: p.nombre_agente,
+            role: p.rol + (p.departamento ? ` · ${p.departamento}` : ''),
+            status: statusMap[p.estado] || 'Offline',
+            lastActive,
+            incidentesAbiertos: p.incidentes_abiertos || 0
+          };
+        });
+
+        setAgents(mapped);
+      } catch (err) {
+        console.error('Error fetching personal_ia:', err);
+      }
+    };
+
+    fetchPersonalIA();
+    const interval = setInterval(fetchPersonalIA, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -278,24 +309,37 @@ export const MissionControlLive = () => {
 
           <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
             {activeTab === 'agents' ? (
-              agents.map((agent, i) => (
-                <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
-                  <div>
-                    <div className="font-bold text-white text-sm">{agent.name}</div>
-                    <div className="text-[10px] text-slate-500 font-semibold mt-0.5">{agent.role}</div>
-                  </div>
-                  <div className="text-right">
-                    <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md border ${
-                      agent.status === 'Online' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                      agent.status === 'Busy' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                      'bg-slate-800 border-slate-700 text-slate-500'
-                    }`}>
-                      {agent.status}
-                    </span>
-                    <div className="text-[9px] text-slate-500 mt-1 font-bold">{agent.lastActive}</div>
-                  </div>
+              agents.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 text-xs font-semibold animate-pulse">
+                  Cargando personal IA...
                 </div>
-              ))
+              ) : (
+                agents.map((agent, i) => (
+                  <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
+                    <div>
+                      <div className="font-bold text-white text-sm flex items-center gap-2">
+                        {agent.name}
+                        {agent.incidentesAbiertos > 0 && (
+                          <span className="px-1.5 py-0.5 text-[8px] font-black rounded bg-rose-500/15 text-rose-400 border border-rose-500/20">
+                            {agent.incidentesAbiertos} incidente{agent.incidentesAbiertos > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-semibold mt-0.5">{agent.role}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md border ${
+                        agent.status === 'Online' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                        agent.status === 'Busy' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                        'bg-slate-800 border-slate-700 text-slate-500'
+                      }`}>
+                        {agent.status}
+                      </span>
+                      <div className="text-[9px] text-slate-500 mt-1 font-bold">{agent.lastActive}</div>
+                    </div>
+                  </div>
+                ))
+              )
             ) : (
               n8nWorkflows.map((wf, i) => (
                 <div key={i} className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex items-center justify-between hover:border-slate-800 transition">
