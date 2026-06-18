@@ -15,6 +15,10 @@ export const MissionControlLive = () => {
   const [criticalNoVoucher, setCriticalNoVoucher] = useState([]);
   const [warningNoVoucher, setWarningNoVoucher] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [tasaActual, setTasaActual] = useState(null);
+  const [tasaInput, setTasaInput] = useState('');
+  const [tasaGuardando, setTasaGuardando] = useState(false);
+  const [tasaMensaje, setTasaMensaje] = useState('');
   const [incidentes, setIncidentes] = useState([]);
   const [resumenIncidentes, setResumenIncidentes] = useState({ sin_resolver: 0 });
   const [tasks, setTasks] = useState([]);
@@ -132,6 +136,52 @@ export const MissionControlLive = () => {
     const interval = setInterval(fetchN8nWorkflows, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // 1d. Tasa del dólar vigente — Banco Popular + regla redondeo +1 (cada 5 min)
+  useEffect(() => {
+    const fetchTasa = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('exchange_rates')
+          .select('rate_sell, rate_bp_original, updated_at')
+          .eq('currency_pair', 'USD_DOP')
+          .eq('is_active', true)
+          .single();
+        if (!error && data) setTasaActual(data);
+      } catch (err) {
+        console.error('Error fetching tasa:', err);
+      }
+    };
+    fetchTasa();
+    const interval = setInterval(fetchTasa, 300000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleConfirmarTasa = async () => {
+    const valor = parseFloat(tasaInput);
+    if (!valor || valor <= 0) {
+      setTasaMensaje('Ingresa un número válido');
+      return;
+    }
+    setTasaGuardando(true);
+    setTasaMensaje('');
+    try {
+      const { data, error } = await supabase.rpc('rpc_registrar_tasa_dolar', {
+        p_rate_bp: valor,
+        p_confirmado_por_nombre: 'finanzas',
+        p_confirmado_via: 'mission_control'
+      });
+      if (error) throw error;
+      setTasaActual({ rate_sell: data.rate_final, rate_bp_original: data.rate_bp_original, updated_at: data.vigente_desde });
+      setTasaInput('');
+      setTasaMensaje(`✓ Actualizada: RD$ ${data.rate_final} (BP: ${data.rate_bp_original})`);
+    } catch (err) {
+      setTasaMensaje('Error al guardar');
+      console.error(err);
+    } finally {
+      setTasaGuardando(false);
+    }
+  };
 
   // 2. Polling de Estadísticas de Reservas y Actividad Reciente (cada 60s)
   useEffect(() => {
@@ -389,6 +439,50 @@ export const MissionControlLive = () => {
               );
             })}
           </div>
+        )}
+      </div>
+
+      {/* Tasa del Dólar — Banco Popular + regla redondeo +1. Owner funcional: finanzas */}
+      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+          <h3 className="font-bold text-white text-lg">💵 Tasa del Dólar</h3>
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Owner: finanzas</span>
+        </div>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <div className="text-[10px] uppercase font-bold text-slate-500">Vigente</div>
+            <div className="text-2xl font-black text-emerald-400">
+              {tasaActual ? `RD$ ${tasaActual.rate_sell}` : '—'}
+            </div>
+            {tasaActual?.rate_bp_original && (
+              <div className="text-[9px] text-slate-500 mt-0.5">
+                Banco Popular: {tasaActual.rate_bp_original} · actualizada {new Date(tasaActual.updated_at).toLocaleDateString('es-DO')}
+              </div>
+            )}
+          </div>
+          <div className="flex items-end gap-2 flex-1 min-w-[240px]">
+            <div className="flex-1">
+              <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Tasa Banco Popular hoy</div>
+              <input
+                type="number"
+                step="0.01"
+                value={tasaInput}
+                onChange={(e) => setTasaInput(e.target.value)}
+                placeholder="Ej: 59.20"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+            <button
+              onClick={handleConfirmarTasa}
+              disabled={tasaGuardando}
+              className="px-4 py-2 text-xs font-black uppercase rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition disabled:opacity-50"
+            >
+              {tasaGuardando ? '...' : 'Confirmar (+1)'}
+            </button>
+          </div>
+        </div>
+        {tasaMensaje && (
+          <div className="text-[10px] text-slate-400 mt-2">{tasaMensaje}</div>
         )}
       </div>
 
