@@ -92,6 +92,28 @@ export const MissionControlLive = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Decisión 1-clic del Director sobre un incidente/gap
+  const handleActualizarIncidente = async (incidenteId, campo, valor) => {
+    try {
+      const params = { p_id: incidenteId };
+      if (campo === 'resuelto') params.p_resuelto = valor;
+      if (campo === 'escalado') params.p_escalado = valor;
+
+      const { error } = await supabase.rpc('rpc_actualizar_incidente', params);
+      if (error) throw error;
+
+      // Actualizar estado local sin esperar el próximo polling
+      setIncidentes(prev => prev.map(inc =>
+        inc.id === incidenteId ? { ...inc, [campo]: valor } : inc
+      ));
+      if (campo === 'resuelto' && valor === true) {
+        setResumenIncidentes(prev => ({ ...prev, sin_resolver: Math.max(0, prev.sin_resolver - 1) }));
+      }
+    } catch (err) {
+      console.error('Error actualizando incidente:', err);
+    }
+  };
+
   // 1c. Polling de Workflows n8n reales (no hardcodeado) — cada 60s
   useEffect(() => {
     const fetchN8nWorkflows = async () => {
@@ -345,6 +367,24 @@ export const MissionControlLive = () => {
                       {inc.resuelto ? 'Resuelto' : 'Pendiente'}
                     </span>
                   </div>
+                  {!inc.resuelto && (
+                    <div className="flex gap-1.5 pt-1">
+                      <button
+                        onClick={() => handleActualizarIncidente(inc.id, 'resuelto', true)}
+                        className="flex-1 text-[8px] font-black uppercase py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition"
+                      >
+                        ✓ Resolver
+                      </button>
+                      {!inc.escalado && (
+                        <button
+                          onClick={() => handleActualizarIncidente(inc.id, 'escalado', true)}
+                          className="flex-1 text-[8px] font-black uppercase py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition"
+                        >
+                          ⚠ Escalar
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
