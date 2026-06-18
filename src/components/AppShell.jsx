@@ -14,7 +14,6 @@ import CreateOfferForm from './marketing/CreateOfferForm'
 import DashboardV26 from './marketing/DashboardV26'
 import WarRoomV41 from './marketing/WarRoomV41'
 import IntegrityMonitor from './marketing/IntegrityMonitor'
-import AdminPanel41 from './marketing/AdminPanel41'
 import MissionControlLive from './marketing/MissionControlLive'
 import PipelineKanban from './marketing/PipelineKanban'
 import CrmDashboard from './marketing/CrmDashboard'
@@ -24,11 +23,7 @@ import ApiToolbox from '../features/api-toolbox/pages/ApiToolbox'
 import AdminDashboardPage from '../pages/admin/AdminDashboardPage'
 import BookingOpsPanel from '../pages/admin/BookingOpsPanel'
 import AdminHotelsPage from '../pages/admin/AdminHotelsPage'
-import HotelsInventoryDashboard from './admin/HotelsInventoryDashboard'
-import AdminRatesPage from '../pages/admin/AdminRatesPage'
-import AdminSeasonsPage from '../pages/admin/AdminSeasonsPage'
 import AdminBookingsPanel from './admin/AdminBookingsPanel'
-import AdminPricingPage from '../pages/admin/AdminPricingPage'
 import AdminSalesPage from '../pages/admin/AdminSalesPage'
 import AdminExcursionsPage from '../pages/admin/AdminExcursionsPage'
 
@@ -50,7 +45,6 @@ export function AppShell() {
               <Route path="dashboard26" element={<BookingOpsPanel />} />
               <Route path="warroom" element={<WarRoomV41 />} />
               <Route path="integrity" element={<IntegrityMonitor />} />
-              <Route path="admin41" element={<AdminPanel41 />} />
               <Route path="mission" element={<MissionControlLive />} />
               <Route path="crm/pipeline" element={<PipelineKanban />} />
               <Route path="crm/dashboard" element={<CrmDashboard />} />
@@ -59,11 +53,7 @@ export function AppShell() {
               {/* Admin Core 2 Routes */}
               <Route path="admin/hotels" element={<AdminHotelsPage />} />
               <Route path="admin/excursions" element={<AdminExcursionsPage />} />
-              <Route path="admin/inventory" element={<HotelsInventoryDashboard />} />
-              <Route path="admin/tarifas" element={<AdminRatesPage />} />
-              <Route path="admin/temporadas" element={<AdminSeasonsPage />} />
               <Route path="admin/bookings" element={<AdminBookingsPanel />} />
-              <Route path="admin/pricing" element={<AdminPricingPage />} />
 
 
             {/* Rutas de Marketing */}

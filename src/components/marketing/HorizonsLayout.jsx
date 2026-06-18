@@ -49,16 +49,6 @@ export const HorizonsLayout = () => {
       current: location.pathname === '/warroom'
     },
     {
-      name: 'Admin 4.1',
-      icon: (
-        <svg className="w-5 h-5 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-        </svg>
-      ),
-      href: '/admin41',
-      current: location.pathname === '/admin41'
-    },
-    {
       name: 'Mission Control',
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -106,34 +96,10 @@ export const HorizonsLayout = () => {
       current: location.pathname === '/admin/excursions'
     },
     {
-      name: 'Habitaciones/Inventario 🛏️',
-      icon: '🛏️',
-      href: '/admin/inventory',
-      current: location.pathname === '/admin/inventory'
-    },
-    {
-      name: 'Tarifas y Precios 💵',
-      icon: '💵',
-      href: '/admin/tarifas',
-      current: location.pathname.startsWith('/admin/tarifas')
-    },
-    {
-      name: 'Temporadas 📅',
-      icon: '📅',
-      href: '/admin/temporadas',
-      current: location.pathname === '/admin/temporadas'
-    },
-    {
       name: 'Reservas / Bookings 🎟️',
       icon: '🎟️',
       href: '/admin/bookings',
       current: location.pathname === '/admin/bookings'
-    },
-    {
-      name: 'Cotizador de Viajes ✈️',
-      icon: '✈️',
-      href: '/admin/pricing',
-      current: location.pathname === '/admin/pricing'
     },
     {
       name: 'Galería (Ofertas) 🖼️',
