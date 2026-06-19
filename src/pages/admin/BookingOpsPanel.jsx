@@ -201,19 +201,63 @@ export default function BookingOpsPanel() {
 // ════════════════════════════════════════════════════════════
 // TAB 1 — NUEVA RESERVA (HOTEL)
 // ════════════════════════════════════════════════════════════
+// Bloque de una habitación dentro del formulario multi-room
+function HabitacionBlock({ idx, hab, rooms, onChange, onRemove, canRemove }) {
+  return (
+    <div className="bg-gray-900 rounded-lg p-4 space-y-3 border border-gray-800">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Habitación {idx + 1}</span>
+        {canRemove && (
+          <button onClick={() => onRemove(idx)} className="text-red-500 hover:text-red-400 text-sm font-bold">✕ Quitar</button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Tipo de habitación">
+          <select className={selectCls} value={hab.room_id} onChange={e => onChange(idx, 'room_id', e.target.value)}>
+            <option value="">Sin habitación específica</option>
+            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Nombre del huésped (esta hab.)">
+          <input className={inputCls} type="text" placeholder="Juan Pérez" value={hab.guest_name} onChange={e => onChange(idx, 'guest_name', e.target.value)} />
+        </Field>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <Field label="Adultos *">
+          <input className={inputCls} type="number" min="1" value={hab.adults} onChange={e => onChange(idx, 'adults', e.target.value)} />
+        </Field>
+        <Field label="Niños (2–11)">
+          <input className={inputCls} type="number" min="0" value={hab.children} onChange={e => onChange(idx, 'children', e.target.value)} />
+        </Field>
+        <Field label="Infantes (0–1)">
+          <input className={inputCls} type="number" min="0" value={hab.infants} onChange={e => onChange(idx, 'infants', e.target.value)} />
+        </Field>
+      </div>
+      <Field label="Precio de esta habitación (USD) *">
+        <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={hab.precio} onChange={e => onChange(idx, 'precio', e.target.value)} />
+      </Field>
+    </div>
+  )
+}
+
+const blankHab = () => ({ room_id: '', guest_name: '', adults: 2, children: 0, infants: 0, precio: '' })
+
 function TabNuevaReserva({ hotels, onCreated, onError }) {
   const [form, setForm] = useState({
-    hotel_id: '', room_id: '', check_in: '', check_out: '',
-    adults: 2, children: 0, infants: 0,
+    hotel_id: '', check_in: '', check_out: '',
     lead_guest_name: '', lead_email: '', lead_phone: '', nationality: 'DO',
-    total_amount: '', deposit_amount: '', payment_method: '', internal_notes: '',
+    deposit_amount: '', payment_method: '', internal_notes: '',
   })
+  const [habitaciones, setHabitaciones] = useState([blankHab()])
   const [rooms, setRooms]   = useState([])
   const [loading, setLoading] = useState(false)
 
   const nights = calcNights(form.check_in, form.check_out)
-  const total  = parseFloat(form.total_amount) || 0
   const dep    = parseFloat(form.deposit_amount) || 0
+  const isGrupal = habitaciones.length > 1
+  const total  = habitaciones.reduce((s, h) => s + (parseFloat(h.precio) || 0), 0)
+  const totalAdults  = habitaciones.reduce((s, h) => s + (parseInt(h.adults) || 0), 0)
+  const totalChildren= habitaciones.reduce((s, h) => s + (parseInt(h.children) || 0), 0)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -226,54 +270,71 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
     setRooms(data || [])
   }
 
+  const addHabitacion = () => setHabitaciones(h => [...h, blankHab()])
+  const removeHabitacion = (idx) => setHabitaciones(h => h.filter((_, i) => i !== idx))
+  const updateHabitacion = (idx, field, val) =>
+    setHabitaciones(h => h.map((hab, i) => i === idx ? { ...hab, [field]: val } : hab))
+
   const handleSubmit = async () => {
-    if (!form.hotel_id || !form.lead_guest_name || !form.check_in || !form.check_out || total <= 0) {
-      onError('Completa: hotel, huésped, fechas y precio total.')
+    if (!form.hotel_id || !form.lead_guest_name || !form.check_in || !form.check_out) {
+      onError('Completa: hotel, huésped principal y fechas.')
+      return
+    }
+    if (habitaciones.some(h => !h.precio || parseFloat(h.precio) <= 0)) {
+      onError('Cada habitación necesita un precio mayor a 0.')
       return
     }
     setLoading(true)
-    const hotel  = hotels.find(h => h.id === form.hotel_id)
-    const room   = rooms.find(r => r.id === form.room_id)
-    const ref    = genRef()
+    const hotel = hotels.find(h => h.id === form.hotel_id)
+    const groupId = isGrupal ? crypto.randomUUID() : null
+    const depositoPorHab = isGrupal && dep > 0 ? dep / habitaciones.length : dep
 
-    const { error } = await supabaseAdmin.from('bookings').insert({
-      booking_reference:   ref,
-      hotel_id:            form.hotel_id,
-      hotel_code:          hotel?.slug || null,
-      room_id:             form.room_id || null,
-      room_name:           room?.name || null,
-      lead_guest_name:     'Mr/Ms ' + form.lead_guest_name,
-      lead_email:          form.lead_email || null,
-      lead_phone:          form.lead_phone || null,
-      nationality:         form.nationality || 'DO',
-      check_in:            form.check_in,
-      check_out:           form.check_out,
-      nights,
-      adults:              parseInt(form.adults),
-      children:            parseInt(form.children),
-      infants:             parseInt(form.infants),
-      total_amount:        total,
-      currency:            'USD',
-      total_amount_dop:    Math.round(total * EXCHANGE_RATE),
-      exchange_rate:       EXCHANGE_RATE,
-      deposit_amount:      dep > 0 ? dep : null,
-      payment_method:      form.payment_method || null,
-      payment_status:      'unpaid',
-      status:              'pending_validation',
-      booking_type:        'individual',
-      source:              'manual_admin',
-      internal_notes:      form.internal_notes || null,
+    const rows = habitaciones.map((hab, i) => {
+      const room = rooms.find(r => r.id === hab.room_id)
+      const precioHab = parseFloat(hab.precio) || 0
+      return {
+        booking_reference:   genRef(),
+        hotel_id:            form.hotel_id,
+        hotel_code:          hotel?.slug || null,
+        room_id:             hab.room_id || null,
+        room_name:           room?.name || null,
+        lead_guest_name:     'Mr/Ms ' + (hab.guest_name || form.lead_guest_name),
+        lead_email:          form.lead_email || null,
+        lead_phone:          form.lead_phone || null,
+        nationality:         form.nationality || 'DO',
+        check_in:            form.check_in,
+        check_out:           form.check_out,
+        nights,
+        adults:              parseInt(hab.adults) || 1,
+        children:            parseInt(hab.children) || 0,
+        infants:             parseInt(hab.infants) || 0,
+        total_amount:        precioHab,
+        currency:            'USD',
+        total_amount_dop:    Math.round(precioHab * EXCHANGE_RATE),
+        exchange_rate:       EXCHANGE_RATE,
+        deposit_amount:      depositoPorHab > 0 ? depositoPorHab : null,
+        payment_method:      form.payment_method || null,
+        payment_status:      'unpaid',
+        status:              'pending_validation',
+        booking_type:        isGrupal ? 'group' : 'individual',
+        source:              'manual_admin',
+        internal_notes:      form.internal_notes || null,
+        group_id:            groupId,
+        group_room_number:   isGrupal ? i + 1 : null,
+      }
     })
+
+    const { error } = await supabaseAdmin.from('bookings').insert(rows)
 
     setLoading(false)
     if (error) { onError('Error: ' + error.message); return }
-    onCreated(ref)
+    onCreated(rows.map(r => r.booking_reference).join(', '))
     setForm({
-      hotel_id: '', room_id: '', check_in: '', check_out: '',
-      adults: 2, children: 0, infants: 0,
+      hotel_id: '', check_in: '', check_out: '',
       lead_guest_name: '', lead_email: '', lead_phone: '', nationality: 'DO',
-      total_amount: '', deposit_amount: '', payment_method: '', internal_notes: '',
+      deposit_amount: '', payment_method: '', internal_notes: '',
     })
+    setHabitaciones([blankHab()])
   }
 
   // Zonas para agrupar hoteles
@@ -281,7 +342,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
 
   return (
     <div className="max-w-2xl space-y-6">
-      {/* Hotel + Habitación */}
+      {/* Hotel + Fechas */}
       <div className="grid grid-cols-2 gap-4">
         <Field label="Hotel *">
           <select
@@ -299,15 +360,11 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
             ))}
           </select>
         </Field>
-        <Field label="Habitación">
-          <select className={selectCls} value={form.room_id} onChange={e => set('room_id', e.target.value)}>
-            <option value="">Sin habitación específica</option>
-            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+        <Field label="Nacionalidad">
+          <input className={inputCls} type="text" placeholder="DO" value={form.nationality} onChange={e => set('nationality', e.target.value)} />
         </Field>
       </div>
 
-      {/* Fechas */}
       <div className="grid grid-cols-3 gap-4">
         <Field label="Check-in *">
           <input className={inputCls} type="date" value={form.check_in} onChange={e => set('check_in', e.target.value)} />
@@ -320,22 +377,9 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
         </Field>
       </div>
 
-      {/* PAX */}
-      <div className="grid grid-cols-3 gap-4">
-        <Field label="Adultos *">
-          <input className={inputCls} type="number" min="1" value={form.adults} onChange={e => set('adults', e.target.value)} />
-        </Field>
-        <Field label="Niños (2–11)">
-          <input className={inputCls} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} />
-        </Field>
-        <Field label="Infantes (0–1)">
-          <input className={inputCls} type="number" min="0" value={form.infants} onChange={e => set('infants', e.target.value)} />
-        </Field>
-      </div>
-
-      {/* Huésped */}
+      {/* Huésped principal */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Nombre del huésped *">
+        <Field label="Nombre del huésped principal *">
           <input className={inputCls} type="text" placeholder="Juan Pérez" value={form.lead_guest_name} onChange={e => set('lead_guest_name', e.target.value)} />
         </Field>
         <Field label="Email">
@@ -344,19 +388,36 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
         <Field label="Teléfono">
           <input className={inputCls} type="text" placeholder="+1 809 000 0000" value={form.lead_phone} onChange={e => set('lead_phone', e.target.value)} />
         </Field>
-        <Field label="Nacionalidad">
-          <input className={inputCls} type="text" placeholder="DO" value={form.nationality} onChange={e => set('nationality', e.target.value)} />
-        </Field>
       </div>
 
       <hr className="border-gray-800" />
 
-      {/* Precios */}
+      {/* HABITACIONES — multi-room */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-bold text-white">
+            Habitaciones ({habitaciones.length}){isGrupal && <span className="ml-2 text-xs text-amber-400 font-black uppercase">Reserva Grupal</span>}
+          </span>
+          <button onClick={addHabitacion} className="text-xs font-black px-3 py-1.5 rounded-lg bg-amber-600/15 border border-amber-600/30 text-amber-500 hover:bg-amber-600/25 transition">
+            + Agregar habitación
+          </button>
+        </div>
+        <div className="space-y-3">
+          {habitaciones.map((hab, i) => (
+            <HabitacionBlock
+              key={i} idx={i} hab={hab} rooms={rooms}
+              onChange={updateHabitacion} onRemove={removeHabitacion}
+              canRemove={habitaciones.length > 1}
+            />
+          ))}
+        </div>
+      </div>
+
+      <hr className="border-gray-800" />
+
+      {/* Pago */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Precio total acordado (USD) *">
-          <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={form.total_amount} onChange={e => set('total_amount', e.target.value)} />
-        </Field>
-        <Field label="Depósito requerido (USD)">
+        <Field label={isGrupal ? 'Depósito total requerido (USD)' : 'Depósito requerido (USD)'}>
           <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={form.deposit_amount} onChange={e => set('deposit_amount', e.target.value)} />
         </Field>
         <Field label="Método de pago">
@@ -373,6 +434,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
       {/* Preview totales */}
       {total > 0 && (
         <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1">
+          {isGrupal && <Row label="Habitaciones" value={`${habitaciones.length} (${totalAdults} adultos, ${totalChildren} niños)`} />}
           <Row label="Total acordado"   value={`$${fmt(total)}`} />
           <Row label="Depósito"         value={dep > 0 ? `$${fmt(dep)}` : '—'} />
           <Row label="Saldo pendiente"  value={`$${fmt(total - dep)}`} />
@@ -381,7 +443,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
       )}
 
       <button onClick={handleSubmit} disabled={loading} className={btnPrimary}>
-        {loading ? 'Creando...' : 'Crear reserva'}
+        {loading ? 'Creando...' : isGrupal ? `Crear ${habitaciones.length} reservas (grupo)` : 'Crear reserva'}
       </button>
     </div>
   )
