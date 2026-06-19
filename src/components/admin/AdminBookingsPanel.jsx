@@ -15,6 +15,7 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '@/lib/customSupabaseClient';
+import FacturadorPanel from './FacturadorPanel';
 
 const AdminBookingsPanel = () => {
   const [bookings, setBookings] = useState([]);
@@ -940,11 +941,12 @@ const AdminBookingsPanel = () => {
             </DialogHeader>
 
             <Tabs value={detailTab} onValueChange={setDetailTab} className="w-full mt-4">
-              <TabsList className="grid grid-cols-4 bg-slate-100 p-1 rounded-xl">
+              <TabsList className="grid grid-cols-5 bg-slate-100 p-1 rounded-xl">
                 <TabsTrigger value="details" className="rounded-lg text-xs py-1.5">Detalle</TabsTrigger>
                 <TabsTrigger value="customer" className="rounded-lg text-xs py-1.5">Cliente</TabsTrigger>
                 <TabsTrigger value="provider" className="rounded-lg text-xs py-1.5">Proveedor</TabsTrigger>
                 <TabsTrigger value="payment" className="rounded-lg text-xs py-1.5 font-bold text-[#C19A6B]">Pagos</TabsTrigger>
+                <TabsTrigger value="factura" className="rounded-lg text-xs py-1.5 font-bold text-yellow-600">🖨️ Factura</TabsTrigger>
               </TabsList>
 
               {/* TAB: DETAILS */}
@@ -1203,6 +1205,12 @@ const AdminBookingsPanel = () => {
                   </div>
                 </div>
               </TabsContent>
+
+              {/* TAB: FACTURACIÓN */}
+              <TabsContent value="factura" className="pt-4">
+                <FacturadorPanel booking={selectedBooking} />
+              </TabsContent>
+
             </Tabs>
           </DialogContent>
         </Dialog>
