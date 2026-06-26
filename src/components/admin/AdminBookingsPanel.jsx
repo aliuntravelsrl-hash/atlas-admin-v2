@@ -17,6 +17,32 @@ import { es } from 'date-fns/locale';
 import { supabase } from '@/lib/customSupabaseClient';
 import FacturadorPanel from './FacturadorPanel';
 
+// ── Moneda por nacionalidad ───────────────────────────────────
+const EXCHANGE_RATE = 58.5
+const getCurrency = (nat) => nat === 'DO' ? 'DOP' : 'USD'
+const fmtMoney = (amount, nat) => {
+  if (!amount) return '—'
+  return getCurrency(nat) === 'DOP'
+    ? `RD$ ${Math.round(amount * EXCHANGE_RATE).toLocaleString('es-DO')}`
+    : `$${parseFloat(amount).toFixed(2)} USD`
+}
+
+// ── Webhooks documentos ───────────────────────────────────────
+const N8N = 'https://n8n-n8n.xaruuo.easypanel.host/webhook'
+const WF_VOUCHER       = `${N8N}/aliun-voucher`
+const WF_COTIZACION    = `${N8N}/aliun-cotizacion-individual`
+const WF_EXCURSION_DOC = `${N8N}/aliun-excursion-doc`
+
+// Detecta tipo de documento según estado de la reserva
+const getDocType = (booking, payments) => {
+  const total  = parseFloat(booking?.total_amount || 0)
+  const paid   = (payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+  const balance = total - paid
+  if (balance <= 0 && paid > 0) return 'voucher'
+  if (booking?.status === 'confirmed') return 'confirmacion'
+  return 'cotizacion'
+}
+
 const AdminBookingsPanel = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +64,75 @@ const AdminBookingsPanel = () => {
   const [confirmingDeposit, setConfirmingDeposit] = useState(false);
   const [releasingVoucher, setReleasingVoucher] = useState(false);
   const [sendingRaceCondition, setSendingRaceCondition] = useState(false);
+  const [generandoDoc, setGenerandoDoc] = useState(false);
+
+  // ── Generar documento oficial ─────────────────────────────────
+  const handleGenerarDocumento = async (booking, paymentsData) => {
+    if (!booking) return
+    setGenerandoDoc(true)
+    const nat     = booking.nationality || 'DO'
+    const total   = parseFloat(booking.total_amount || 0)
+    const paid    = (paymentsData || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+    const balance = total - paid
+    const docType = getDocType(booking, paymentsData)
+    const isExc   = booking.booking_type === 'excursion'
+    const sr      = booking.special_requests || {}
+
+    let wfUrl, payload
+    if (isExc) {
+      wfUrl = WF_EXCURSION_DOC
+      payload = {
+        booking_ref:      booking.booking_reference,
+        excursion_slug:   booking.hotel_code || sr.excursion_slug || '',
+        plan_id:          sr.plan_id || '',
+        tipo_documento:   docType === 'voucher' ? 'VOUCHER' : docType === 'confirmacion' ? 'CONFIRMACION' : 'COTIZACION',
+        cliente_nombre:   booking.lead_guest_name,
+        cliente_telefono: booking.lead_phone || '',
+        fecha:            booking.check_in,
+        pax_adultos:      booking.adults || 2,
+        pax_ninos:        booking.children || 0,
+        nationality:      nat,
+        total_dop:        Math.round(total * EXCHANGE_RATE),
+        deposito_dop:     Math.round(paid * EXCHANGE_RATE),
+        saldo_dop:        Math.round(balance * EXCHANGE_RATE),
+      }
+    } else {
+      wfUrl = docType === 'voucher' ? WF_VOUCHER : WF_COTIZACION
+      payload = {
+        booking_ref:      booking.booking_reference,
+        id_reserva:       booking.booking_reference,
+        cotizacion_id:    booking.booking_reference,
+        hotel_slug:       booking.hotels_master?.slug || booking.hotel_code || '',
+        hotel_name:       booking.hotels_master?.name || '',
+        cliente_nombre:   booking.lead_guest_name,
+        cliente_telefono: booking.lead_phone || '',
+        cliente_email:    booking.lead_email || '',
+        check_in:         booking.check_in,
+        check_out:        booking.check_out,
+        habitacion:       booking.room_name || 'Estándar',
+        tipo_hab:         booking.room_name || 'Estándar',
+        regimen:          'Todo Incluido',
+        pax_adultos:      booking.adults || 2,
+        pax_ninos:        booking.children || 0,
+        tipo_documento:   docType === 'confirmacion' ? 'CONFIRMACION' : 'COTIZACION',
+        precio_total_dop: Math.round(total * EXCHANGE_RATE),
+        deposito_dop:     Math.round(paid * EXCHANGE_RATE),
+        saldo_dop:        Math.round(balance * EXCHANGE_RATE),
+        provider_locator: hotelConfirmationNo || booking.hotel_confirmation_no || booking.booking_reference,
+      }
+    }
+
+    try {
+      const res  = await fetch(wfUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const data = await res.json()
+      if (data.pdf_url) window.open(data.pdf_url, '_blank')
+      toast({ title: `✅ ${isExc ? 'Excursión' : 'Hotel'} — ${docType.charAt(0).toUpperCase()+docType.slice(1)} generado`, description: 'PDF enviado a Telegram del Director.' })
+    } catch (e) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' })
+    } finally {
+      setGenerandoDoc(false)
+    }
+  }
 
   // Quick Filter States
   const [filterRef, setFilterRef] = useState('');
@@ -1202,6 +1297,23 @@ const AdminBookingsPanel = () => {
                         ) : "Liberar Voucher al Cliente"}
                       </Button>
                     )}
+
+                    {/* Botón inteligente — documento oficial según estado */}
+                    <Button
+                      className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold text-sm py-5 gap-2 mt-2"
+                      onClick={() => handleGenerarDocumento(selectedBooking, [])}
+                      disabled={generandoDoc}
+                    >
+                      {generandoDoc ? (
+                        <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Generando...</>
+                      ) : (() => {
+                        const dt = getDocType(selectedBooking, [])
+                        const isExc = selectedBooking.booking_type === 'excursion'
+                        if (dt === 'voucher')       return isExc ? '🌊 Voucher Excursión' : '🏨 Voucher Hotel'
+                        if (dt === 'confirmacion')  return isExc ? '✅ Confirmación Exc.' : '✅ Confirmación'
+                        return isExc ? '📄 Cotización Exc.' : '📄 Cotización'
+                      })()}
+                    </Button>
                   </div>
                 </div>
               </TabsContent>

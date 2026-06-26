@@ -126,11 +126,9 @@ const ExcursionList = ({ excursions, onEdit, onManagePlans, onToggleState }) => 
                 <tr>
                     <th className="px-4 py-3">Nombre</th>
                     <th className="px-4 py-3">Zona</th>
-                    <th className="px-4 py-3">Categoría</th>
                     <th className="px-4 py-3">Operador</th>
-                    <th className="px-4 py-3">Precio Base</th>
+                    <th className="px-4 py-3">Precio desde</th>
                     <th className="px-4 py-3 text-center">Planes</th>
-                    <th className="px-4 py-3">Rating</th>
                     <th className="px-4 py-3 text-center">Activa</th>
                     <th className="px-4 py-3 text-center">Destacada</th>
                     <th className="px-4 py-3 text-right">Acciones</th>
@@ -141,32 +139,36 @@ const ExcursionList = ({ excursions, onEdit, onManagePlans, onToggleState }) => 
                     <tr key={ex.id} className="border-b hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 font-semibold text-slate-800">{ex.name}</td>
                         <td className="px-4 py-3">{ex.zone || 'N/A'}</td>
-                        <td className="px-4 py-3">{ex.category || 'N/A'}</td>
                         <td className="px-4 py-3">{ex.operator_name || 'N/A'}</td>
-                        <td className="px-4 py-3 font-bold text-emerald-600">${ex.price_base_usd || 0}</td>
+                        <td className="px-4 py-3">
+                            <span className="font-bold text-emerald-600">${ex.price_base_usd || 0} USD</span>
+                            <span className="text-xs text-slate-400 ml-1">≈ RD$ {Math.round((ex.price_base_usd || 0) * 58.5).toLocaleString('es-DO')}</span>
+                        </td>
                         <td className="px-4 py-3 font-bold text-center bg-slate-50">
                             {ex.excursion_plans?.[0]?.count || 0}
                         </td>
-                        <td className="px-4 py-3">{ex.rating || 0} ⭐</td>
                         <td className="px-4 py-3 text-center">
-                            <Switch 
-                                checked={!!ex.is_active} 
-                                onCheckedChange={() => onToggleState(ex.id, 'is_active', !!ex.is_active)} 
-                            />
+                            <Switch checked={!!ex.is_active} onCheckedChange={() => onToggleState(ex.id, 'is_active', !!ex.is_active)} />
                         </td>
                         <td className="px-4 py-3 text-center">
-                            <Switch 
-                                checked={!!ex.is_featured} 
-                                onCheckedChange={() => onToggleState(ex.id, 'is_featured', !!ex.is_featured)} 
-                            />
+                            <Switch checked={!!ex.is_featured} onCheckedChange={() => onToggleState(ex.id, 'is_featured', !!ex.is_featured)} />
                         </td>
-                        <td className="px-4 py-3 flex items-center justify-end gap-2">
-                            <Button variant="outline" size="sm" onClick={() => onManagePlans(ex)} className="font-semibold">
-                                <ListTodo className="h-4 w-4 mr-1 text-blue-600" /> Planes
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={() => onEdit(ex)}>
-                                <Edit className="h-4 w-4 text-slate-600" />
-                            </Button>
+                        <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-2">
+                                <Button variant="outline" size="sm" onClick={() => onManagePlans(ex)} className="font-semibold">
+                                    <ListTodo className="h-4 w-4 mr-1 text-blue-600" /> Planes
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => onEdit(ex)}>
+                                    <Edit className="h-4 w-4 text-slate-600" />
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                    onClick={() => window.open(`/dashboard26?tab=excursion&excursion_slug=${ex.slug}`, '_blank')}
+                                >
+                                    + Reserva
+                                </Button>
+                            </div>
                         </td>
                     </tr>
                 ))}
@@ -383,8 +385,8 @@ const PlansManager = ({ excursion }) => {
                                 <tr key={p.id} className="border-b hover:bg-slate-50 transition-colors">
                                     <td className="px-4 py-3 font-semibold">{p.name}</td>
                                     <td className="px-4 py-3">{p.duration_label || 'N/A'}</td>
-                                    <td className="px-4 py-3 text-emerald-600 font-bold">${p.adult_price || 0}</td>
-                                    <td className="px-4 py-3 text-sky-600 font-bold">${p.child_price || 0}</td>
+                                    <td className="px-4 py-3 text-emerald-600 font-bold">${p.price_adult_usd || 0}</td>
+                                    <td className="px-4 py-3 text-sky-600 font-bold">${p.price_child_usd || 0}</td>
                                     <td className="px-4 py-3 text-center">
                                         <Switch 
                                             checked={!!p.is_active} 
@@ -419,8 +421,8 @@ const PlanForm = ({ plan, excursionId, onClose, onSave }) => {
     const [name, setName] = useState(plan?.name || '');
     const [description, setDescription] = useState(plan?.description || '');
     const [durationLabel, setDurationLabel] = useState(plan?.duration_label || '');
-    const [adultPrice, setAdultPrice] = useState(plan?.adult_price || '');
-    const [childPrice, setChildPrice] = useState(plan?.child_price || '');
+    const [adultPrice, setAdultPrice] = useState(plan?.price_adult_usd || '');
+    const [childPrice, setChildPrice] = useState(plan?.price_child_usd || '');
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -430,8 +432,8 @@ const PlanForm = ({ plan, excursionId, onClose, onSave }) => {
             name,
             description,
             duration_label: durationLabel,
-            adult_price: adultPrice || 0,
-            child_price: childPrice || 0
+            price_adult_usd: adultPrice || 0,
+            price_child_usd: childPrice || 0
         };
 
         const { error } = plan?.id 
