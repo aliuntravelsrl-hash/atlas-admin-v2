@@ -925,7 +925,7 @@ function TabExcursion({ onCreated, onError }) {
     plan_id: '', plan_name: '', plan_price_adult: 0, plan_price_child: 0,
     fecha: '', adults: 2, children: 0, infants: 0,
     total_amount: '', lead_guest_name: '', lead_email: '', lead_phone: '',
-    payment_method: '', internal_notes: '',
+    nationality: 'DO', payment_method: '', internal_notes: '',
   })
   const [loading, setLoading] = useState(false)
 
@@ -964,25 +964,32 @@ function TabExcursion({ onCreated, onError }) {
     const plan = plans.find(p => p.id === planId)
     const adults   = parseInt(form.adults) || 2
     const children = parseInt(form.children) || 0
-    const total    = plan
+    const totalUSD = plan
       ? (adults * plan.price_adult_usd) + (children * plan.price_child_usd)
       : 0
+    // Si es DO → mostrar en DOP, guardar equivalente
+    const total = getCurrency(form.nationality) === 'DOP'
+      ? Math.round(totalUSD * EXCHANGE_RATE)
+      : totalUSD
     setForm(f => ({
       ...f,
       plan_id:          planId,
       plan_name:        plan?.name || '',
       plan_price_adult: plan?.price_adult_usd || 0,
       plan_price_child: plan?.price_child_usd || 0,
-      total_amount:     total > 0 ? total.toFixed(2) : '',
+      total_amount:     total > 0 ? total.toString() : '',
     }))
   }
 
   // Recalcular total cuando cambian PAX
   const recalcTotal = (adults, children) => {
     if (!form.plan_id) return
-    const total = (parseInt(adults) * form.plan_price_adult) +
-                  (parseInt(children) * form.plan_price_child)
-    setForm(f => ({ ...f, total_amount: total.toFixed(2) }))
+    const totalUSD = (parseInt(adults) * form.plan_price_adult) +
+                     (parseInt(children) * form.plan_price_child)
+    const total = getCurrency(form.nationality) === 'DOP'
+      ? Math.round(totalUSD * EXCHANGE_RATE)
+      : totalUSD
+    setForm(f => ({ ...f, total_amount: total.toString() }))
   }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -1014,9 +1021,10 @@ function TabExcursion({ onCreated, onError }) {
       lead_guest_name:    'Mr/Ms ' + form.lead_guest_name,
       lead_email:         form.lead_email || null,
       lead_phone:         form.lead_phone || null,
-      total_amount:       total,
-      currency:           'USD',
-      total_amount_dop:   Math.round(total * EXCHANGE_RATE),
+      total_amount:       getCurrency(form.nationality) === 'DOP' ? toUSD(total, form.nationality) : total,
+      currency:           getCurrency(form.nationality),
+      total_amount_dop:   getCurrency(form.nationality) === 'DOP' ? Math.round(total) : Math.round(total * EXCHANGE_RATE),
+      nationality:        form.nationality,
       exchange_rate:      EXCHANGE_RATE,
       payment_method:     form.payment_method || null,
       payment_status:     'unpaid',
@@ -1038,7 +1046,7 @@ function TabExcursion({ onCreated, onError }) {
       plan_id: '', plan_name: '', plan_price_adult: 0, plan_price_child: 0,
       fecha: '', adults: 2, children: 0, infants: 0,
       total_amount: '', lead_guest_name: '', lead_email: '', lead_phone: '',
-      payment_method: '', internal_notes: '',
+      nationality: 'DO', payment_method: '', internal_notes: '',
     })
     setPlans([])
   }
@@ -1111,6 +1119,18 @@ function TabExcursion({ onCreated, onError }) {
           <input className={inputCls} type="text" placeholder="Juan Pérez"
             value={form.lead_guest_name} onChange={e => set('lead_guest_name', e.target.value)} />
         </Field>
+        <Field label="Nacionalidad">
+          <select className={selectCls} value={form.nationality} onChange={e => {
+            set('nationality', e.target.value)
+            // Recalcular total con nueva moneda si ya hay plan
+            if (form.plan_id) recalcTotal(form.adults, form.children)
+          }}>
+            <option value="DO">🇩🇴 Dominicana (DOP)</option>
+            <option value="US">🇺🇸 USA (USD)</option>
+            <option value="PR">🇵🇷 Puerto Rico (USD)</option>
+            <option value="OTHER">🌍 Otra (USD)</option>
+          </select>
+        </Field>
         <Field label="Email">
           <input className={inputCls} type="email" placeholder="juan@email.com"
             value={form.lead_email} onChange={e => set('lead_email', e.target.value)} />
@@ -1122,14 +1142,14 @@ function TabExcursion({ onCreated, onError }) {
         <Field label="Método de pago">
           <select className={selectCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
             <option value="">Seleccionar...</option>
-            {getMetodos(form.nationality || "DO").map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {getMetodos(form.nationality).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
       </div>
 
       {/* Precio + Notas */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Precio total acordado (USD) *">
+        <Field label={`Precio total acordado (${getCurrency(form.nationality)}) *`}>
           <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00"
             value={form.total_amount} onChange={e => set('total_amount', e.target.value)} />
         </Field>
@@ -1145,8 +1165,10 @@ function TabExcursion({ onCreated, onError }) {
           {form.excursion_name && <Row label="Excursión" value={form.excursion_name} />}
           {form.plan_name && <Row label="Plan" value={form.plan_name} />}
           {form.fecha && <Row label="Fecha" value={form.fecha} />}
-          <Row label="Total acordado" value={`$${fmt(total)}`} />
-          <Row label="Total en DOP" value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+          <Row label="Total acordado" value={fmtMoney(total, form.nationality)} />
+          {getCurrency(form.nationality) === 'USD' && (
+            <Row label="Equivalente DOP" value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+          )}
         </div>
       )}
 
