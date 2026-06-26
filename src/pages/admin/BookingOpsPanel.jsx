@@ -40,9 +40,10 @@ const toUSD = (amount, nationality) =>
 
 // ── Webhooks de documentos ────────────────────────────────────
 const N8N_BASE = 'https://n8n-n8n.xaruuo.easypanel.host/webhook'
-const WF_VOUCHER      = `${N8N_BASE}/aliun-voucher`
-const WF_CONFIRMACION = `${N8N_BASE}/aliun-cotizacion-individual`
-const WF_COTIZACION   = `${N8N_BASE}/aliun-cotizacion-individual`
+const WF_VOUCHER        = `${N8N_BASE}/aliun-voucher`
+const WF_CONFIRMACION   = `${N8N_BASE}/aliun-cotizacion-individual`
+const WF_COTIZACION     = `${N8N_BASE}/aliun-cotizacion-individual`
+const WF_EXCURSION_DOC  = `${N8N_BASE}/aliun-excursion-doc`
 
 // ── Utilidades ───────────────────────────────────────────────
 const fmt = (n) => parseFloat(n || 0).toFixed(2)
@@ -768,42 +769,68 @@ Aliun Travel SRL · aliuntravelsrl.com · Generado ${now}</p>
 
   const handleGenerarDocumento = async () => {
     if (!booking) return
-    const nat = booking.nationality || 'DO'
-    const cur = getCurrency(nat)
-    const totalMonto = cur === 'DOP' ? Math.round(total * EXCHANGE_RATE) : total
-    const abonoMonto = cur === 'DOP' ? Math.round(paid * EXCHANGE_RATE) : paid
-    const saldoMonto = cur === 'DOP' ? Math.round(balance * EXCHANGE_RATE) : balance
+    const nat     = booking.nationality || 'DO'
+    const cur     = getCurrency(nat)
     const docType = getDocType()
-    const hotelSlug = hotel?.slug || booking.hotel_code || ''
+    const isExcursion = booking.booking_type === 'excursion'
 
-    const payload = {
-      booking_ref:       booking.booking_reference,
-      id_reserva:        booking.booking_reference,
-      cotizacion_id:     booking.booking_reference,
-      hotel_slug:        hotelSlug,
-      hotel_name:        hotel?.name || '',
-      cliente_nombre:    booking.lead_guest_name,
-      cliente_telefono:  booking.lead_phone || '',
-      cliente_email:     booking.lead_email || '',
-      check_in:          booking.check_in,
-      check_out:         booking.check_out,
-      habitacion:        booking.room_name || 'Estándar',
-      tipo_hab:          booking.room_name || 'Estándar',
-      regimen:           'Todo Incluido',
-      pax_adultos:       booking.adults || 2,
-      pax_ninos:         booking.children || 0,
-      tipo_documento:    docType === 'confirmacion' ? 'CONFIRMACION' : 'COTIZACION',
-      precio_total_dop:  Math.round(total * EXCHANGE_RATE),
-      deposito_dop:      Math.round(paid * EXCHANGE_RATE),
-      saldo_dop:         Math.round(balance * EXCHANGE_RATE),
-      moneda:            cur,
-      // Para voucher
-      provider_locator:  booking.provider_locator || booking.booking_reference,
+    // Extraer datos de la excursión desde special_requests (guardado en el submit)
+    const sr = booking.special_requests || {}
+
+    let payload, wfUrl
+
+    if (isExcursion) {
+      // ── EXCURSIÓN → WF-EXCURSION-DOC-v1 ──────────────────
+      wfUrl = `${N8N_BASE}/aliun-excursion-doc`
+      payload = {
+        booking_ref:      booking.booking_reference,
+        excursion_slug:   booking.hotel_code || sr.excursion_slug || '',
+        plan_id:          sr.plan_id || '',
+        tipo_documento:   docType === 'voucher' ? 'VOUCHER'
+                        : docType === 'confirmacion' ? 'CONFIRMACION'
+                        : 'COTIZACION',
+        cliente_nombre:   booking.lead_guest_name,
+        cliente_telefono: booking.lead_phone || '',
+        email:            booking.lead_email || '',
+        fecha:            booking.check_in,
+        pax_adultos:      booking.adults || 2,
+        pax_ninos:        booking.children || 0,
+        nationality:      nat,
+        total_dop:        Math.round(total * EXCHANGE_RATE),
+        deposito_dop:     Math.round(paid * EXCHANGE_RATE),
+        saldo_dop:        Math.round(balance * EXCHANGE_RATE),
+      }
+    } else {
+      // ── HOTEL → WF existentes ─────────────────────────────
+      const hotelSlug = hotel?.slug || booking.hotel_code || ''
+      wfUrl = docType === 'voucher' ? WF_VOUCHER : WF_CONFIRMACION
+      payload = {
+        booking_ref:      booking.booking_reference,
+        id_reserva:       booking.booking_reference,
+        cotizacion_id:    booking.booking_reference,
+        hotel_slug:       hotelSlug,
+        hotel_name:       hotel?.name || '',
+        cliente_nombre:   booking.lead_guest_name,
+        cliente_telefono: booking.lead_phone || '',
+        cliente_email:    booking.lead_email || '',
+        check_in:         booking.check_in,
+        check_out:        booking.check_out,
+        habitacion:       booking.room_name || 'Estándar',
+        tipo_hab:         booking.room_name || 'Estándar',
+        regimen:          'Todo Incluido',
+        pax_adultos:      booking.adults || 2,
+        pax_ninos:        booking.children || 0,
+        tipo_documento:   docType === 'confirmacion' ? 'CONFIRMACION' : 'COTIZACION',
+        precio_total_dop: Math.round(total * EXCHANGE_RATE),
+        deposito_dop:     Math.round(paid * EXCHANGE_RATE),
+        saldo_dop:        Math.round(balance * EXCHANGE_RATE),
+        moneda:           cur,
+        provider_locator: booking.provider_locator || booking.booking_reference,
+      }
     }
 
     try {
-      const wfUrl = docType === 'voucher' ? WF_VOUCHER : WF_CONFIRMACION
-      const res = await fetch(wfUrl, {
+      const res  = await fetch(wfUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -856,14 +883,21 @@ Aliun Travel SRL · aliuntravelsrl.com · Generado ${now}</p>
         </Field>
         <button onClick={handlePrint} disabled={!loaded} className={btnSecondary}>🖨 Imprimir</button>
         <button onClick={handleCopy} disabled={!loaded} className={btnSecondary}>📋 Copiar</button>
-        {loaded && booking && (
-          <button
-            onClick={handleGenerarDocumento}
-            className="px-4 py-2 rounded-lg text-sm font-bold bg-yellow-600 hover:bg-yellow-500 text-white transition"
-          >
-            {getDocType() === 'voucher' ? '🏨 Voucher' : getDocType() === 'confirmacion' ? '✅ Confirmación' : '📄 Cotización'}
-          </button>
-        )}
+        {loaded && booking && (() => {
+          const isExc = booking.booking_type === 'excursion'
+          const dt = getDocType()
+          const label = isExc
+            ? (dt === 'voucher' ? '🌊 Voucher Excursión' : dt === 'confirmacion' ? '✅ Confirmación Exc.' : '📄 Cotización Exc.')
+            : (dt === 'voucher' ? '🏨 Voucher Hotel' : dt === 'confirmacion' ? '✅ Confirmación' : '📄 Cotización')
+          return (
+            <button
+              onClick={handleGenerarDocumento}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-yellow-600 hover:bg-yellow-500 text-white transition"
+            >
+              {label}
+            </button>
+          )
+        })()}
       </div>
 
       {loaded && booking && (
