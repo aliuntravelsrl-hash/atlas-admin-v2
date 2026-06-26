@@ -27,6 +27,23 @@ const supabaseAdmin = createClient(SUPA_URL, SUPA_SERVICE)
 
 const EXCHANGE_RATE = 58.5
 
+// ── Moneda por nacionalidad ───────────────────────────────────
+const getCurrency = (nationality) => ['DO'].includes(nationality) ? 'DOP' : 'USD'
+const fmtMoney = (amount, nationality) => {
+  const cur = getCurrency(nationality)
+  if (cur === 'DOP') return `RD$ ${Math.round(amount).toLocaleString('es-DO')}`
+  return `$${parseFloat(amount).toFixed(2)} USD`
+}
+// Normaliza siempre a USD para guardar en DB (DOP se convierte)
+const toUSD = (amount, nationality) =>
+  getCurrency(nationality) === 'DOP' ? (parseFloat(amount) || 0) / EXCHANGE_RATE : (parseFloat(amount) || 0)
+
+// ── Webhooks de documentos ────────────────────────────────────
+const N8N_BASE = 'https://n8n-n8n.xaruuo.easypanel.host/webhook'
+const WF_VOUCHER      = `${N8N_BASE}/aliun-voucher`
+const WF_CONFIRMACION = `${N8N_BASE}/aliun-cotizacion-individual`
+const WF_COTIZACION   = `${N8N_BASE}/aliun-cotizacion-individual`
+
 // ── Utilidades ───────────────────────────────────────────────
 const fmt = (n) => parseFloat(n || 0).toFixed(2)
 const genRef = () => 'ALN-' + Date.now().toString(36).toUpperCase().slice(-6)
@@ -202,7 +219,9 @@ export default function BookingOpsPanel() {
 // TAB 1 — NUEVA RESERVA (HOTEL)
 // ════════════════════════════════════════════════════════════
 // Bloque de una habitación dentro del formulario multi-room
-function HabitacionBlock({ idx, hab, rooms, onChange, onRemove, canRemove }) {
+function HabitacionBlock({ idx, hab, rooms, onChange, onRemove, canRemove, nationality }) {
+  const cur = getCurrency(nationality)
+  const priceLbl = `Precio de esta habitación (${cur}) *`
   return (
     <div className="bg-gray-900 rounded-lg p-4 space-y-3 border border-gray-800">
       <div className="flex items-center justify-between">
@@ -233,7 +252,7 @@ function HabitacionBlock({ idx, hab, rooms, onChange, onRemove, canRemove }) {
           <input className={inputCls} type="number" min="0" value={hab.infants} onChange={e => onChange(idx, 'infants', e.target.value)} />
         </Field>
       </div>
-      <Field label="Precio de esta habitación (USD) *">
+      <Field label={priceLbl}>
         <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={hab.precio} onChange={e => onChange(idx, 'precio', e.target.value)} />
       </Field>
     </div>
@@ -361,7 +380,12 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
           </select>
         </Field>
         <Field label="Nacionalidad">
-          <input className={inputCls} type="text" placeholder="DO" value={form.nationality} onChange={e => set('nationality', e.target.value)} />
+          <select className={selectCls} value={form.nationality} onChange={e => set('nationality', e.target.value)}>
+            <option value="DO">🇩🇴 Dominicana (DOP)</option>
+            <option value="US">🇺🇸 USA (USD)</option>
+            <option value="PR">🇵🇷 Puerto Rico (USD)</option>
+            <option value="OTHER">🌍 Otra (USD)</option>
+          </select>
         </Field>
       </div>
 
@@ -408,6 +432,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
               key={i} idx={i} hab={hab} rooms={rooms}
               onChange={updateHabitacion} onRemove={removeHabitacion}
               canRemove={habitaciones.length > 1}
+              nationality={form.nationality}
             />
           ))}
         </div>
@@ -417,7 +442,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
 
       {/* Pago */}
       <div className="grid grid-cols-2 gap-4">
-        <Field label={isGrupal ? 'Depósito total requerido (USD)' : 'Depósito requerido (USD)'}>
+        <Field label={isGrupal ? `Depósito total (${getCurrency(form.nationality)})` : `Depósito requerido (${getCurrency(form.nationality)})`}>
           <input className={inputCls} type="number" step="0.01" min="0" placeholder="0.00" value={form.deposit_amount} onChange={e => set('deposit_amount', e.target.value)} />
         </Field>
         <Field label="Método de pago">
@@ -435,10 +460,12 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
       {total > 0 && (
         <div className="bg-gray-900 rounded-lg p-4 text-sm space-y-1">
           {isGrupal && <Row label="Habitaciones" value={`${habitaciones.length} (${totalAdults} adultos, ${totalChildren} niños)`} />}
-          <Row label="Total acordado"   value={`$${fmt(total)}`} />
-          <Row label="Depósito"         value={dep > 0 ? `$${fmt(dep)}` : '—'} />
-          <Row label="Saldo pendiente"  value={`$${fmt(total - dep)}`} />
-          <Row label="Total en DOP"     value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+          <Row label="Total acordado"   value={fmtMoney(total, form.nationality)} />
+          <Row label="Depósito"         value={dep > 0 ? fmtMoney(dep, form.nationality) : '—'} />
+          <Row label="Saldo pendiente"  value={fmtMoney(total - dep, form.nationality)} />
+          {getCurrency(form.nationality) === 'USD' && (
+            <Row label="Equivalente DOP" value={`RD$ ${Math.round(total * EXCHANGE_RATE).toLocaleString()}`} />
+          )}
         </div>
       )}
 
@@ -726,6 +753,67 @@ Aliun Travel SRL · aliuntravelsrl.com · Generado ${now}</p>
 </body></html>`
   }
 
+  // ── Generar documento oficial via WF según estado ────────────
+  const getDocType = () => {
+    if (balance <= 0 && paid > 0) return 'voucher'       // Pago total → Voucher
+    if (booking?.status === 'confirmed') return 'confirmacion'  // Confirmada con saldo → Confirmación
+    return 'cotizacion'                                   // Sin pagos → Cotización
+  }
+
+  const handleGenerarDocumento = async () => {
+    if (!booking) return
+    const nat = booking.nationality || 'DO'
+    const cur = getCurrency(nat)
+    const totalMonto = cur === 'DOP' ? Math.round(total * EXCHANGE_RATE) : total
+    const abonoMonto = cur === 'DOP' ? Math.round(paid * EXCHANGE_RATE) : paid
+    const saldoMonto = cur === 'DOP' ? Math.round(balance * EXCHANGE_RATE) : balance
+    const docType = getDocType()
+    const hotelSlug = hotel?.slug || booking.hotel_code || ''
+
+    const payload = {
+      booking_ref:       booking.booking_reference,
+      id_reserva:        booking.booking_reference,
+      cotizacion_id:     booking.booking_reference,
+      hotel_slug:        hotelSlug,
+      hotel_name:        hotel?.name || '',
+      cliente_nombre:    booking.lead_guest_name,
+      cliente_telefono:  booking.lead_phone || '',
+      cliente_email:     booking.lead_email || '',
+      check_in:          booking.check_in,
+      check_out:         booking.check_out,
+      habitacion:        booking.room_name || 'Estándar',
+      tipo_hab:          booking.room_name || 'Estándar',
+      regimen:           'Todo Incluido',
+      pax_adultos:       booking.adults || 2,
+      pax_ninos:         booking.children || 0,
+      tipo_documento:    docType === 'confirmacion' ? 'CONFIRMACION' : 'COTIZACION',
+      precio_total_dop:  Math.round(total * EXCHANGE_RATE),
+      deposito_dop:      Math.round(paid * EXCHANGE_RATE),
+      saldo_dop:         Math.round(balance * EXCHANGE_RATE),
+      moneda:            cur,
+      // Para voucher
+      provider_locator:  booking.provider_locator || booking.booking_reference,
+    }
+
+    try {
+      const wfUrl = docType === 'voucher' ? WF_VOUCHER : WF_CONFIRMACION
+      const res = await fetch(wfUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = await res.json()
+      if (data.pdf_url || data.landing_url) {
+        window.open(data.pdf_url || data.landing_url, '_blank')
+        alert(`✅ ${docType === 'voucher' ? 'Voucher' : docType === 'confirmacion' ? 'Confirmación' : 'Cotización'} generado y enviado a Telegram.`)
+      } else {
+        alert('⚠️ Documento generado. Revisa Telegram para el PDF.')
+      }
+    } catch (e) {
+      alert('Error conectando con el flujo de documentos: ' + e.message)
+    }
+  }
+
   const handlePrint = () => {
     if (!booking) return
     const w = window.open('', '_blank')
@@ -762,6 +850,14 @@ Aliun Travel SRL · aliuntravelsrl.com · Generado ${now}</p>
         </Field>
         <button onClick={handlePrint} disabled={!loaded} className={btnSecondary}>🖨 Imprimir</button>
         <button onClick={handleCopy} disabled={!loaded} className={btnSecondary}>📋 Copiar</button>
+        {loaded && booking && (
+          <button
+            onClick={handleGenerarDocumento}
+            className="px-4 py-2 rounded-lg text-sm font-bold bg-yellow-600 hover:bg-yellow-500 text-white transition"
+          >
+            {getDocType() === 'voucher' ? '🏨 Voucher' : getDocType() === 'confirmacion' ? '✅ Confirmación' : '📄 Cotización'}
+          </button>
+        )}
       </div>
 
       {loaded && booking && (
