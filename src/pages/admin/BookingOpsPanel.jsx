@@ -60,14 +60,20 @@ const TABS = [
 ]
 
 // ── Métodos de pago ──────────────────────────────────────────
-const METODOS = [
-  { value: 'transferencia', label: 'Transferencia bancaria' },
-  { value: 'efectivo',      label: 'Efectivo' },
-  { value: 'tarjeta',       label: 'Tarjeta' },
-  { value: 'zelle',         label: 'Zelle' },
-  { value: 'paypal',        label: 'PayPal' },
+const METODOS_DO = [
+  { value: 'transferencia', label: 'Transferencia bancaria (Azul/Popular)' },
+  { value: 'efectivo',      label: 'Efectivo en oficina' },
   { value: 'enlace_pago',   label: 'Enlace de pago' },
 ]
+const METODOS_USD = [
+  { value: 'zelle',         label: 'Zelle' },
+  { value: 'paypal',        label: 'PayPal' },
+  { value: 'tarjeta',       label: 'Tarjeta (Stripe)' },
+  { value: 'transferencia', label: 'Transferencia internacional' },
+]
+const getMetodos = (nationality) => getCurrency(nationality) === 'DOP' ? METODOS_DO : METODOS_USD
+// Compatibilidad con usos directos de METODOS
+const METODOS = [...METODOS_DO, ...METODOS_USD]
 
 // ════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
@@ -448,7 +454,7 @@ function TabNuevaReserva({ hotels, onCreated, onError }) {
         <Field label="Método de pago">
           <select className={selectCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
             <option value="">Seleccionar...</option>
-            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {getMetodos(form.nationality).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
         <Field label="Notas internas">
@@ -644,7 +650,7 @@ function TabPago({ bookings, onRegistered, onError }) {
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm">
           <p className="font-medium text-white mb-1">{booking.booking_reference} · {booking.lead_guest_name}</p>
           <p className="text-gray-400 text-xs mb-3">
-            Total: ${fmt(total)} · Pagado: ${fmt(paid)} · Pendiente: ${fmt(balance)}
+            Total: {fmtMoney(total, booking.nationality)} · Pagado: {fmtMoney(paid, booking.nationality)} · Pendiente: {fmtMoney(balance, booking.nationality)}
           </p>
           <div className="bg-gray-800 rounded-full h-2 overflow-hidden">
             <div className="bg-emerald-500 h-full transition-all" style={{ width: `${pct}%` }} />
@@ -654,14 +660,14 @@ function TabPago({ bookings, onRegistered, onError }) {
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Monto (USD) *">
+        <Field label={`Monto (${getCurrency(booking?.nationality || 'DO')}) *`}>
           <input className={inputCls} type="number" step="0.01" min="0.01" placeholder="0.00"
             value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
         </Field>
         <Field label="Método *">
           <select className={selectCls} value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
             <option value="">Seleccionar...</option>
-            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {getMetodos(booking?.nationality || "DO").map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
         <Field label="Referencia / comprobante">
@@ -1116,7 +1122,7 @@ function TabExcursion({ onCreated, onError }) {
         <Field label="Método de pago">
           <select className={selectCls} value={form.payment_method} onChange={e => set('payment_method', e.target.value)}>
             <option value="">Seleccionar...</option>
-            {METODOS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {getMetodos(form.nationality || "DO").map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
       </div>
