@@ -24,6 +24,7 @@ import AdminDashboardPage from '../pages/admin/AdminDashboardPage'
 import BookingOpsPanel from '../pages/admin/BookingOpsPanel'
 import AdminHotelsPage from '../pages/admin/AdminHotelsPage'
 import AdminBookingsPanel from './admin/AdminBookingsPanel'
+import AdminExcursionBookingsPanel from './admin/AdminExcursionBookingsPanel'
 import AdminSalesPage from '../pages/admin/AdminSalesPage'
 import AdminExcursionsPage from '../pages/admin/AdminExcursionsPage'
 
@@ -54,6 +55,7 @@ export function AppShell() {
               <Route path="admin/hotels" element={<AdminHotelsPage />} />
               <Route path="admin/excursions" element={<AdminExcursionsPage />} />
               <Route path="admin/bookings" element={<AdminBookingsPanel />} />
+              <Route path="admin/excursion-bookings" element={<AdminExcursionBookingsPanel />} />
 
 
             {/* Rutas de Marketing */}

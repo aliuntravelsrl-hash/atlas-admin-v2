@@ -96,10 +96,16 @@ export const HorizonsLayout = () => {
       current: location.pathname === '/admin/excursions'
     },
     {
-      name: 'Reservas / Bookings 🎟️',
-      icon: '🎟️',
+      name: 'Reservas Hoteles 🏨',
+      icon: '🏨',
       href: '/admin/bookings',
       current: location.pathname === '/admin/bookings'
+    },
+    {
+      name: 'Reservas Excursiones 🌊',
+      icon: '🌊',
+      href: '/admin/excursion-bookings',
+      current: location.pathname === '/admin/excursion-bookings'
     },
     {
       name: 'Galería (Ofertas) 🖼️',
