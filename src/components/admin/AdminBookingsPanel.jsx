@@ -16,15 +16,16 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { supabase } from '@/lib/customSupabaseClient';
 import FacturadorPanel from './FacturadorPanel';
+import { useExchangeRate, EXCHANGE_RATE_FALLBACK } from '@/hooks/useExchangeRate';
 
 // ── Moneda por nacionalidad ───────────────────────────────────
-const EXCHANGE_RATE = 58.5
+// TASA: dinámica desde exchange_rates (hook). Rate se pasa como parámetro.
 const getCurrency = (nat) => nat === 'DO' ? 'DOP' : 'USD'
-const fmtMoney = (amount, nat) => {
-  if (!amount) return '—'
+const fmtMoney = (amountUsd, nat, rate = EXCHANGE_RATE_FALLBACK) => {
+  if (!amountUsd && amountUsd !== 0) return '—'
   return getCurrency(nat) === 'DOP'
-    ? `RD$ ${Math.round(amount * EXCHANGE_RATE).toLocaleString('es-DO')}`
-    : `$${parseFloat(amount).toFixed(2)} USD`
+    ? `RD$ ${Math.round((parseFloat(amountUsd) || 0) * rate).toLocaleString('es-DO')}`
+    : `$${parseFloat(amountUsd).toFixed(2)} USD`
 }
 
 // ── Webhooks documentos ───────────────────────────────────────
@@ -49,6 +50,10 @@ const AdminBookingsPanel = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedBooking, setSelectedBooking] = useState(null);
+
+  // ── Tasa de cambio dinámica desde exchange_rates ──────────────
+  const { rate: EXCHANGE_RATE } = useExchangeRate();
+
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState('details');
   const [crmLead, setCrmLead] = useState(null);

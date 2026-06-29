@@ -25,20 +25,25 @@ const SUPA_SERVICE = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || SUPA_ANON
 const supabase = createClient(SUPA_URL, SUPA_ANON)
 const supabaseAdmin = createClient(SUPA_URL, SUPA_SERVICE)
 
-const EXCHANGE_RATE = 58.5
-
 // ── Moneda por nacionalidad ───────────────────────────────────
-const getCurrency = (nationality) => ['DO'].includes(nationality) ? 'DOP' : 'USD'
-const fmtMoney = (amount, nationality) => {
-  const cur = getCurrency(nationality)
-  if (cur === 'DOP') return `RD$ ${Math.round(amount).toLocaleString('es-DO')}`
-  return `$${parseFloat(amount).toFixed(2)} USD`
+// TASA: se lee de exchange_rates via useExchangeRate() dentro del componente
+// Estas funciones reciben 'rate' como parámetro para ser puras y dinámicas
+const getCurrency = (nat) => nat === 'DO' ? 'DOP' : 'USD'
+const fmtMoney = (amountUsd, nat, rate = 58.5) => {
+  if (getCurrency(nat) === 'DOP') return `RD$ ${Math.round((parseFloat(amountUsd) || 0) * rate).toLocaleString('es-DO')}`
+  return `$${(parseFloat(amountUsd) || 0).toFixed(2)} USD`
 }
-// Normaliza siempre a USD para guardar en DB (DOP se convierte)
-const toUSD = (amount, nationality) =>
-  getCurrency(nationality) === 'DOP' ? (parseFloat(amount) || 0) / EXCHANGE_RATE : (parseFloat(amount) || 0)
+// Convierte input del usuario a USD canónico para guardar en DB
+// DOP: el usuario ingresa en pesos → dividir por tasa para obtener USD
+// USD: el usuario ingresa en dólares → guardar directo
+const toUSD = (amount, nat, rate = 58.5) =>
+  getCurrency(nat) === 'DOP'
+    ? parseFloat(((parseFloat(amount) || 0) / rate).toFixed(2))
+    : (parseFloat(amount) || 0)
 
 // ── Webhooks de documentos ────────────────────────────────────
+import { useExchangeRate } from '@/hooks/useExchangeRate'
+
 const N8N_BASE = 'https://n8n-n8n.xaruuo.easypanel.host/webhook'
 const WF_VOUCHER        = `${N8N_BASE}/aliun-voucher`
 const WF_CONFIRMACION   = `${N8N_BASE}/aliun-cotizacion-individual`
@@ -84,6 +89,9 @@ export default function BookingOpsPanel() {
   const [toast, setToast]         = useState(null)
   const [bookings, setBookings]   = useState([])
   const [hotels, setHotels]       = useState([])
+
+  // ── Tasa de cambio dinámica desde exchange_rates ──────────────
+  const { rate: EXCHANGE_RATE } = useExchangeRate()
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
