@@ -590,19 +590,27 @@ function TabPago({ bookings, onRegistered, onError }) {
 
   const booking  = bookings.find(b => b.id === bookingId)
   const nat      = booking?.nationality || 'DO'
-  const cur      = getCurrency(nat)                    // 'DOP' | 'USD'
+  const cur      = booking?.currency || getCurrency(nat)  // leer currency REAL de la reserva
   const isDOP    = cur === 'DOP'
 
-  // total/paid/balance siempre en USD (unidad canónica de la DB)
-  const total   = parseFloat(booking?.total_amount || 0)
-  const paid    = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
-  const balance = total - paid
+  // Leer el total en la moneda correcta de la reserva
+  // Si currency='DOP' → total_amount ya está en DOP, no convertir
+  // Si currency='USD' → total_amount en USD, convertir para mostrar en DOP
+  const totalUSD = isDOP
+    ? parseFloat((parseFloat(booking?.total_amount || 0) / exchangeRate).toFixed(2))
+    : parseFloat(booking?.total_amount || 0)
+
+  // paid siempre viene en USD de atlas_payments
+  const paidUSD  = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
+
+  // Para display: si reserva es DOP mostramos en DOP; si USD mostramos en USD
+  const total   = isDOP ? parseFloat(booking?.total_amount || 0) : totalUSD
+  const paid    = isDOP ? Math.round(paidUSD * exchangeRate) : paidUSD
+  const balance = Math.max(0, total - paid)
   const pct     = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
 
-  // Equivalente en DOP para mostrar en el preview (si reserva es USD)
-  const totalDOP   = isDOP ? Math.round(total   * exchangeRate) : null
-  const paidDOP    = isDOP ? Math.round(paid    * exchangeRate) : null
-  const balanceDOP = isDOP ? Math.round(balance * exchangeRate) : null
+  // Para el insert en atlas_payments siempre necesitamos USD
+  const paidUSDAccum = paidUSD
 
   useEffect(() => {
     if (!bookingId) { setPayments([]); return }
@@ -632,7 +640,7 @@ function TabPago({ bookings, onRegistered, onError }) {
     const amountDOP = isDOP ? Math.round(rawAmount) : Math.round(rawAmount * exchangeRate)
 
     setLoading(true)
-    const newPaidUSD = paid + amountUSD
+    const newPaidUSD = paidUSDAccum + amountUSD
     const newStatus  = newPaidUSD >= total ? 'paid' : 'partial'
 
     const { error: e1 } = await supabaseAdmin.from('atlas_payments').insert({
