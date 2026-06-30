@@ -585,17 +585,30 @@ function TabPago({ bookings, onRegistered, onError }) {
   const [form, setForm]           = useState({ amount: '', method: '', reference: '', payer_name: '' })
   const [loading, setLoading]     = useState(false)
 
-  const booking = bookings.find(b => b.id === bookingId)
+  // Tasa de cambio dinámica — reutiliza el mismo hook del archivo
+  const { rate: exchangeRate, dopToUsd } = useExchangeRate()
+
+  const booking  = bookings.find(b => b.id === bookingId)
+  const nat      = booking?.nationality || 'DO'
+  const cur      = getCurrency(nat)                    // 'DOP' | 'USD'
+  const isDOP    = cur === 'DOP'
+
+  // total/paid/balance siempre en USD (unidad canónica de la DB)
   const total   = parseFloat(booking?.total_amount || 0)
   const paid    = payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0)
   const balance = total - paid
   const pct     = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
 
+  // Equivalente en DOP para mostrar en el preview (si reserva es USD)
+  const totalDOP   = isDOP ? Math.round(total   * exchangeRate) : null
+  const paidDOP    = isDOP ? Math.round(paid    * exchangeRate) : null
+  const balanceDOP = isDOP ? Math.round(balance * exchangeRate) : null
+
   useEffect(() => {
     if (!bookingId) { setPayments([]); return }
     supabaseAdmin
       .from('atlas_payments')
-      .select('amount, method, created_at, reference, status')
+      .select('amount, method, created_at, reference, status, currency')
       .eq('booking_id', bookingId)
       .in('status', ['approved', 'confirmed'])
       .then(({ data }) => {
@@ -606,38 +619,61 @@ function TabPago({ bookings, onRegistered, onError }) {
   }, [bookingId])
 
   const handlePago = async () => {
-    const amount = parseFloat(form.amount)
-    if (!bookingId || amount <= 0 || !form.method) {
+    const rawAmount = parseFloat(form.amount)
+    if (!bookingId || rawAmount <= 0 || !form.method) {
       onError('Completa reserva, monto y método de pago.')
       return
     }
+
+    // ── CONVERSIÓN ───────────────────────────────────────────
+    // El usuario ingresa en la moneda de la reserva (DOP o USD)
+    // La DB guarda en USD (unidad canónica)
+    const amountUSD = isDOP ? dopToUsd(rawAmount) : rawAmount
+    const amountDOP = isDOP ? Math.round(rawAmount) : Math.round(rawAmount * exchangeRate)
+
     setLoading(true)
-    const newTotal  = paid + amount
-    const newStatus = newTotal >= total ? 'paid' : 'partial'
+    const newPaidUSD = paid + amountUSD
+    const newStatus  = newPaidUSD >= total ? 'paid' : 'partial'
 
     const { error: e1 } = await supabaseAdmin.from('atlas_payments').insert({
       booking_id:   bookingId,
-      amount,
+      amount:       amountUSD,              // siempre en USD
       currency:     'USD',
       method:       form.method,
-      payment_type: 'deposit',
+      payment_type: 'deposito',             // ← FIX: constraint acepta 'deposito' no 'deposit'
       reference:    form.reference || null,
       payer_name:   form.payer_name || null,
       status:       'approved',
       approved_by:  'admin',
       approved_at:  new Date().toISOString(),
-      evidence:     { manual: true, registered_by: 'admin_panel' },
+      evidence:     {
+        manual: true,
+        registered_by: 'admin_panel',
+        original_currency: cur,
+        original_amount:   rawAmount,
+        exchange_rate:     exchangeRate,
+        amount_dop:        amountDOP,
+      },
     })
 
     if (e1) { setLoading(false); onError('Error: ' + e1.message); return }
 
+    // Actualizar deposit_amount_dop en bookings también
+    const newDepositDOP = (parseFloat(booking?.deposit_amount_dop || 0)) + amountDOP
     await supabaseAdmin
       .from('bookings')
-      .update({ payment_status: newStatus })
+      .update({
+        payment_status:    newStatus,
+        deposit_amount:    parseFloat((paid + amountUSD).toFixed(2)),
+        deposit_amount_dop: newDepositDOP,
+      })
       .eq('id', bookingId)
 
     setLoading(false)
-    setPayments(prev => [...prev, { amount, method: form.method, created_at: new Date().toISOString(), status: 'approved' }])
+    setPayments(prev => [...prev, {
+      amount: amountUSD, method: form.method,
+      created_at: new Date().toISOString(), status: 'approved', currency: 'USD'
+    }])
     setForm(f => ({ ...f, amount: '', reference: '' }))
     onRegistered()
   }
@@ -658,9 +694,20 @@ function TabPago({ bookings, onRegistered, onError }) {
       {booking && (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm">
           <p className="font-medium text-white mb-1">{booking.booking_reference} · {booking.lead_guest_name}</p>
-          <p className="text-gray-400 text-xs mb-3">
-            Total: {fmtMoney(total, booking.nationality)} · Pagado: {fmtMoney(paid, booking.nationality)} · Pendiente: {fmtMoney(balance, booking.nationality)}
-          </p>
+          {/* Mostrar siempre en la moneda del cliente */}
+          {isDOP ? (
+            <p className="text-gray-400 text-xs mb-3">
+              Total: RD$ {(totalDOP || 0).toLocaleString('es-DO')} ·
+              Pagado: <span className="text-emerald-400">RD$ {(paidDOP || 0).toLocaleString('es-DO')}</span> ·
+              Pendiente: <span className="text-red-400">RD$ {(balanceDOP || 0).toLocaleString('es-DO')}</span>
+            </p>
+          ) : (
+            <p className="text-gray-400 text-xs mb-3">
+              Total: ${fmt(total)} USD ·
+              Pagado: <span className="text-emerald-400">${fmt(paid)} USD</span> ·
+              Pendiente: <span className="text-red-400">${fmt(balance)} USD</span>
+            </p>
+          )}
           <div className="bg-gray-800 rounded-full h-2 overflow-hidden">
             <div className="bg-emerald-500 h-full transition-all" style={{ width: `${pct}%` }} />
           </div>
@@ -669,14 +716,26 @@ function TabPago({ bookings, onRegistered, onError }) {
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label={`Monto (${getCurrency(booking?.nationality || 'DO')}) *`}>
-          <input className={inputCls} type="number" step="0.01" min="0.01" placeholder="0.00"
+        <Field label={`Monto (${cur}) *`}>
+          <input className={inputCls} type="number" step={isDOP ? '1' : '0.01'} min="0.01"
+            placeholder={isDOP ? 'Ej: 5000' : '0.00'}
             value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+          {/* Preview de conversión en tiempo real */}
+          {form.amount > 0 && isDOP && (
+            <span className="text-xs text-gray-500 mt-1">
+              ≈ ${dopToUsd(form.amount).toFixed(2)} USD @ {exchangeRate} DOP/USD
+            </span>
+          )}
+          {form.amount > 0 && !isDOP && (
+            <span className="text-xs text-gray-500 mt-1">
+              ≈ RD$ {Math.round(form.amount * exchangeRate).toLocaleString('es-DO')} DOP
+            </span>
+          )}
         </Field>
         <Field label="Método *">
           <select className={selectCls} value={form.method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
             <option value="">Seleccionar...</option>
-            {getMetodos(booking?.nationality || "DO").map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            {getMetodos(nat).map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </Field>
         <Field label="Referencia / comprobante">
