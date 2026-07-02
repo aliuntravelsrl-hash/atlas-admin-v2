@@ -31,7 +31,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.HOSTINGER_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -p ${{ secrets.HOSTINGER_PORT }} ${{ secrets.HOSTINGER_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p ${{ secrets.HOSTINGER_PORT }} ${{ secrets.HOSTINGER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Package build
         run: tar czf /tmp/admin-dist.tar.gz -C dist .
@@ -40,17 +40,27 @@ jobs:
         run: |
           scp -P ${{ secrets.HOSTINGER_PORT }} -i ~/.ssh/id_ed25519 \
             /tmp/admin-dist.tar.gz \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:/tmp/
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:/tmp/admin-dist.tar.gz
 
       - name: Deploy on server
         run: |
           ssh -p ${{ secrets.HOSTINGER_PORT }} -i ~/.ssh/id_ed25519 \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} \
-            "cd domains/atlas.aliuntravelsrl.com/public_html && \
-             find . -mindepth 1 -not -name '.htaccess' -not -name 'api-toolbox' -delete && \
-             tar xzf /tmp/admin-dist.tar.gz && \
-             rm /tmp/admin-dist.tar.gz && \
-             echo 'Deploy OK: atlas.aliuntravelsrl.com'"
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} << 'ENDSSH'
+          set -e
+          TARGET="$HOME/domains/atlas.aliuntravelsrl.com/public_html"
+          
+          # Limpiar solo assets compilados (index.html + /assets/) — no tocar subdirectorios con permisos restringidos
+          rm -f "$TARGET/index.html"
+          rm -rf "$TARGET/assets"
+          
+          # Extraer nuevo build
+          tar xzf /tmp/admin-dist.tar.gz -C "$TARGET"
+          
+          # Limpiar archivo temporal
+          rm -f /tmp/admin-dist.tar.gz
+          
+          echo "✅ Deploy completado: atlas.aliuntravelsrl.com"
+          ENDSSH
 
       - name: Cleanup SSH key
         if: always()
