@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
+const frenteColor = (frente) => ({
+  'F1-FRONTEND':    '#3B82F6',  // azul
+  'F2-BACKEND-CORE':'#8B5CF6',  // violeta
+  'F3-ATRACCION':   '#F59E0B',  // amber
+  'F4-RRHH-IA':     '#10B981',  // verde
+  'F5-SEGURIDAD':   '#EF4444',  // rojo
+})[frente] || '#6B7280';
+
 export const MissionControlLive = () => {
   const [activeTab, setActiveTab] = useState('workflows');
   
@@ -22,6 +30,7 @@ export const MissionControlLive = () => {
   const [incidentes, setIncidentes] = useState([]);
   const [resumenIncidentes, setResumenIncidentes] = useState({ sin_resolver: 0 });
   const [tasks, setTasks] = useState([]);
+  const [atlasTasks, setAtlasTasks] = useState([]);
 
   // 1. Polling de Salud del Sistema MCP / n8n (cada 30s)
   useEffect(() => {
@@ -115,6 +124,22 @@ export const MissionControlLive = () => {
       }
     } catch (err) {
       console.error('Error actualizando incidente:', err);
+    }
+  };
+
+  const handleCompletarTarea = async (codigo) => {
+    try {
+      await supabase
+        .from('atlas_tasks')
+        .update({ 
+          estado: 'completado',
+          fecha_completado: new Date().toISOString()
+        })
+        .eq('codigo', codigo);
+      // Eliminar del state local
+      setAtlasTasks(prev => prev.filter(t => t.codigo !== codigo));
+    } catch (err) {
+      console.error('Error al completar tarea:', err);
     }
   };
 
@@ -231,7 +256,7 @@ export const MissionControlLive = () => {
         setCriticalNoVoucher(criticalList);
         setWarningNoVoucher(warningList);
 
-        // Actualizar tareas con las brechas reales de severidad SEV1 y SEV2 + tareas mock
+        // Actualizar tareas con las brechas reales de severidad SEV1 y SEV2
         const criticalTasks = criticalList.map(b => ({
           id: `GAP-CRIT-${b.booking_reference || b.id.substring(0, 6).toUpperCase()}`,
           description: `Brecha SEV1: Reserva ${b.booking_reference || b.id.substring(0, 6)} sin voucher_code ni voucher_id.`,
@@ -246,11 +271,15 @@ export const MissionControlLive = () => {
           status: 'Advertencia - Gap Parcial'
         }));
 
-        const mockTasks = [
-          { id: 'TSK-9399', description: 'Traducción de reseña en RAG Cache', priority: 'SEV3', status: 'Processing' },
-          { id: 'TSK-9395', description: 'Creación de Copia de Oferta WhatsApp', priority: 'SEV2', status: 'Awaiting approval' }
-        ];
-        setTasks([...criticalTasks, ...warningTasks, ...mockTasks]);
+        // Fetch real de atlas_tasks
+        const { data: fetchedAtlasTasks } = await supabase
+          .from('atlas_tasks')
+          .select('codigo, titulo, asignado_a, prioridad, estado, frente, sprint')
+          .not('estado', 'in', '("completado","archivado")')
+          .order('fecha_encargo', { ascending: false });
+
+        setTasks([...criticalTasks, ...warningTasks]);
+        setAtlasTasks(fetchedAtlasTasks || []);
 
         // C. Actividad Reciente de Bookings
         const { data: recent } = await supabase
@@ -576,32 +605,87 @@ export const MissionControlLive = () => {
         </div>
 
         {/* Sección 2: Cola de Tareas */}
-        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
-          <h3 className="font-bold text-white text-lg flex items-center gap-2">
-            <span>📋 Tareas del Sistema ({tasks.length})</span>
-          </h3>
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
+          {/* SECCIÓN A — Backlog estratégico */}
+          <div className="space-y-4">
+            <h3 className="font-bold text-white text-base flex items-center justify-between border-b border-slate-800 pb-2">
+              <span>📋 Backlog Activo ({atlasTasks.length})</span>
+              <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Estratégico</span>
+            </h3>
 
-          <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
-            {tasks.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 text-xs font-semibold animate-pulse">
-                No hay tareas pendientes en la cola.
-              </div>
-            ) : (
-              tasks.map((task, i) => (
-                <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-col justify-between space-y-2 hover:border-slate-800 transition">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-400 text-xs">{task.id}</span>
-                    <span className={`px-2 py-0.5 text-[9px] font-black rounded-md ${
-                      task.priority === 'SEV1' ? 'bg-rose-500/10 border border-rose-500/20 text-rose-500' :
-                      task.priority === 'SEV2' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500' :
-                      'bg-blue-500/10 border border-blue-500/20 text-blue-500'
-                    }`}>{task.priority}</span>
-                  </div>
-                  <p className="text-xs text-white font-semibold leading-relaxed">{task.description}</p>
-                  <div className={`text-[10px] font-bold uppercase tracking-wider ${task.priority === 'SEV1' ? 'text-rose-400 font-extrabold' : 'text-slate-500'}`}>{task.status}</div>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+              {atlasTasks.length === 0 ? (
+                <div className="text-center py-6 text-slate-500 text-xs font-semibold">
+                  Sin tareas en el backlog activo.
                 </div>
-              ))
-            )}
+              ) : (
+                atlasTasks.map(t => (
+                  <div 
+                    key={t.codigo} 
+                    className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-col justify-between space-y-3 hover:border-slate-800 transition"
+                    style={{ borderLeft: `4px solid ${frenteColor(t.frente)}` }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-blue-400 text-xs">{t.codigo}</span>
+                      <span className={`px-2 py-0.5 text-[9px] font-black rounded-md ${
+                        t.prioridad === 'alta' ? 'bg-rose-500/10 border border-rose-500/20 text-rose-500' :
+                        t.prioridad === 'media' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500' :
+                        'bg-blue-500/10 border border-blue-500/20 text-blue-500'
+                      }`}>{t.prioridad ? t.prioridad.toUpperCase() : 'MEDIA'}</span>
+                    </div>
+                    
+                    <div>
+                      <p className="text-xs text-white font-semibold leading-relaxed">{t.titulo}</p>
+                      <div className="flex items-center justify-between mt-2 text-[10px] text-slate-500 font-medium">
+                        <span>Asignado: <span className="text-slate-300 font-semibold">{t.asignado_a || 'Sin asignar'}</span></span>
+                        <span className="font-mono text-[9px] uppercase tracking-wider opacity-80">{t.frente}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-900/60">
+                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Sprint: {t.sprint || '—'}</span>
+                      <button
+                        onClick={() => handleCompletarTarea(t.codigo)}
+                        className="text-[9px] font-black uppercase px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition"
+                      >
+                        ✓ Completar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* SECCIÓN B — Actividad real-time agentes */}
+          <div className="space-y-4 pt-4 border-t border-slate-850">
+            <h3 className="font-bold text-white text-base flex items-center justify-between border-b border-slate-800 pb-2">
+              <span>📡 Actividad en Vivo ({tasks.length})</span>
+              <span className="text-[9px] text-slate-505 font-bold uppercase tracking-wider">Real-time Gaps</span>
+            </h3>
+
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-slate-950">
+              {tasks.length === 0 ? (
+                <div className="text-center py-6 text-slate-500 text-xs font-semibold animate-pulse">
+                  No hay incidentes ni brechas en vivo.
+                </div>
+              ) : (
+                tasks.map((task, i) => (
+                  <div key={i} className="bg-slate-950 border border-slate-850 p-4 rounded-xl flex flex-col justify-between space-y-2 hover:border-slate-800 transition">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-400 text-xs">{task.id}</span>
+                      <span className={`px-2 py-0.5 text-[9px] font-black rounded-md ${
+                        task.priority === 'SEV1' ? 'bg-rose-500/10 border border-rose-500/20 text-rose-500' :
+                        task.priority === 'SEV2' ? 'bg-amber-500/10 border border-amber-500/20 text-amber-500' :
+                        'bg-blue-500/10 border border-blue-500/20 text-blue-500'
+                      }`}>{task.priority}</span>
+                    </div>
+                    <p className="text-xs text-white font-semibold leading-relaxed">{task.description}</p>
+                    <div className={`text-[10px] font-bold uppercase tracking-wider ${task.priority === 'SEV1' ? 'text-rose-400 font-extrabold' : 'text-slate-500'}`}>{task.status}</div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
