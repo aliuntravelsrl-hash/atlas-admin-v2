@@ -1,0 +1,2 @@
+Deploy trigger: 2026-07-02T01:31:08.770784
+SSH secret configurado OK
